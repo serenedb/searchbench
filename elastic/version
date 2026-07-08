@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Print running ES version; used to label results JSON
+set -euo pipefail
+: "${ES_PORT:=9201}"
+curl -fsS "http://127.0.0.1:${ES_PORT}/" 2>/dev/null \
+  | jq -r '.version.number // "unknown"'

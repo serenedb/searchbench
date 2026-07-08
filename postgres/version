@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Print pg_search extension version; "unknown" on failure
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+v=$("${PSQL[@]}" -tA -c \
+    "SELECT extversion FROM pg_extension WHERE extname='pg_search';" 2>/dev/null \
+    | tr -d '[:space:]')
+echo "${v:-unknown}"

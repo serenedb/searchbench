@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Launch ES container; idempotent (early-return if ./check passes)
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${ES_PORT:=9201}"   # 9201 not 9200: avoid OpenSearch collision
+: "${ES_DATA_DIR:=${PWD}/es-data}"
+: "${ES_IMAGE:=docker.elastic.co/elasticsearch/elasticsearch:9.3.2}"
+: "${ES_CONTAINER:=searchbench-es}"
+# JVM heap; shared SEARCHBENCH_HEAP keeps ES/OS equal (ES_HEAP overrides just ES)
+: "${ES_HEAP:=${SEARCHBENCH_HEAP:-30g}}"
+
+if ./check >/dev/null 2>&1; then
+    echo "ES already up on :${ES_PORT}"
+    exit 0
+fi
+
+mkdir -p "$ES_DATA_DIR/data" "$ES_DATA_DIR/logs"
+
+# Restart existing container, else create fresh
+if docker inspect "$ES_CONTAINER" >/dev/null 2>&1; then
+    docker start "$ES_CONTAINER" >/dev/null
+else
+    # --network host: no NAT; bind directly via http.port/http.host
+    docker run -d \
+        --name "$ES_CONTAINER" \
+        --network host \
+        -e discovery.type=single-node \
+        -e "http.port=${ES_PORT}" \
+        -e "http.host=0.0.0.0" \
+        -e xpack.security.enabled=false \
+        -e bootstrap.memory_lock=true \
+        -e "ES_JAVA_OPTS=-Xms${ES_HEAP} -Xmx${ES_HEAP}" \
+        --ulimit memlock=-1:-1 \
+        --ulimit nofile=65535:65535 \
+        -v "${ES_DATA_DIR}/data:/usr/share/elasticsearch/data" \
+        -v "${ES_DATA_DIR}/logs:/usr/share/elasticsearch/logs" \
+        "$ES_IMAGE" >/dev/null
+fi
+
+for _ in $(seq 1 180); do
+    if ./check >/dev/null 2>&1; then
+        echo "ES up on :${ES_PORT} (backend=docker)"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "ES did not become healthy within 180s." >&2
+docker logs --tail 50 "$ES_CONTAINER" 2>&1 >&2 || true
+exit 1

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# On-disk byte size of otel_logs index
+set -euo pipefail
+: "${ES_PORT:=9201}"
+INDEX="otel_logs"
+curl -fsS "http://127.0.0.1:${ES_PORT}/_cat/indices/${INDEX}?bytes=b&h=ss" \
+  | awk '{print $1}'

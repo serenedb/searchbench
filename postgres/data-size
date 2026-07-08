@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Report dataset + BM25 index bytes on disk.
+# Ask Postgres directly instead of `du`-ing the Docker volume: avoids needing the
+# volume path/root under /var/lib/docker, works in Docker or native. pg_total_relation_size
+# covers heap, TOAST, and all indexes including the pg_search bm25 index (Tantivy
+# segments in Postgres block storage). Closest analog to SereneDB's `du` of datadir (both exclude WAL).
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+# to_regclass is NULL when table missing; coalesce to 0 so missing table reports 0
+"${PSQL[@]}" -tA -c \
+    "SELECT COALESCE(pg_total_relation_size(to_regclass('public.otel_logs')), 0);" \
+    2>/dev/null || echo 0

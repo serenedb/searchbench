@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SearchBench — full-text search benchmark</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23895AF8' fill-opacity='.3'/%3E%3Cpath d='M26 16C26 10.48 21.52 6 16 6 10.48 6 6 10.48 6 16c0 5.52 4.48 10 10 10 5.52 0 10-4.48 10-10Z' fill='%23895AF8'/%3E%3Cpath d='M12.68 19.33c3.25 3.25 8.15 3.63 10.94.84 2.79-2.79 2.41-7.69-.84-10.94-3.26-3.25-8.15-3.63-10.94-.84-2.79 2.79-2.41 7.69.84 10.94Z' fill='%2380BEFF'/%3E%3Cpath d='M17.18 14.82c1.63 1.63 4.05 1.84 5.42.47 1.37-1.37 1.16-3.79-.47-5.42-1.63-1.63-4.05-1.84-5.42-.47-1.37 1.37-1.16 3.79.47 5.42Z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="fonts.css">
+<style>
+  :root, :root[data-theme="dark"] {
+    --bg:#1c1c1c; --card:#212121; --head:#262626; --inset:#151515;
+    --fg:#ffffff; --mut:#bbbbbb; --line:rgba(255,255,255,.12); --line2:rgba(255,255,255,.07);
+    --accent:#895af8; --blue:#3386ff; --link:#80beff; --na:#1a1a1a;
+    color-scheme:dark;
+  }
+  :root[data-theme="light"] {
+    --bg:#ffffff; --card:#ffffff; --head:#f7f7f7; --inset:#f0f2f5;
+    --fg:#11121d; --mut:#506182; --line:#e7e7e7; --line2:#f0f0f0;
+    --accent:#895af8; --blue:#3386ff; --link:#4a7aad; --na:#f0f2f5;
+    color-scheme:light;
+  }
+  :root {
+    --shadow-mix:35%; --pad-y:4px;
+    /* dithered pixel drop-shadow mask */
+    --dither:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%224%22 height=%225%22 viewBox=%220 0 4 5%22%3E%3Crect x=%22.75%22 y=%22.75%22 width=%22.8%22 height=%221.5%22 fill=%22black%22/%3E%3Crect x=%222.65%22 y=%223%22 width=%22.8%22 height=%221.5%22 fill=%22black%22/%3E%3C/svg%3E');
+    --mono:ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; padding:0; height:100%; }
+  body {
+    background:var(--bg); color:var(--fg);
+    font-family:'Gilroy', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow:hidden;
+  }
+  a { color:var(--link); text-decoration:none; }
+  a:hover { color:var(--accent); }
+  button { font-family:inherit; }
+  @keyframes sb-blink { 0%,55%{opacity:1} 56%,100%{opacity:0} }
+  *::-webkit-scrollbar { width:10px; height:10px; }
+  *::-webkit-scrollbar-thumb { background:var(--line); border:3px solid transparent; background-clip:padding-box; }
+  *::-webkit-scrollbar-track { background:transparent; }
+
+  #app { display:flex; flex-direction:column; gap:11px; width:100%; height:100dvh; padding:14px; font-size:13px; overflow:hidden; }
+
+  /* ---- pixel-shadow card ---- */
+  .panel { position:relative; isolation:isolate; padding:0 8.5px 8.5px 0; flex-shrink:0; }
+  .panel.grow { flex:1; min-height:0; display:flex; }
+  .panel > .sh {
+    position:absolute; right:0; bottom:0; width:calc(100% - 8.5px); height:calc(100% - 8.5px);
+    background:color-mix(in srgb, var(--fg) var(--shadow-mix), transparent);
+    -webkit-mask:var(--dither) repeat; mask:var(--dither) repeat;
+    -webkit-mask-size:4px 5px; mask-size:4px 5px; pointer-events:none;
+  }
+  .panel > .bd { position:relative; z-index:1; border:.5px solid var(--line); background:var(--card); }
+  .bd.fill { flex:1; min-width:0; display:flex; flex-direction:column; }
+
+  /* ---- panel head ---- */
+  .ph { display:flex; align-items:center; gap:6px; padding:6px 10px; border-bottom:.5px solid var(--line); background:var(--head); flex-shrink:0; }
+  .ph .pr { color:var(--accent); font-weight:700; font-size:11px; }
+  .ph .pt { font-size:10.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--mut); }
+  .ph .note { font-size:10px; color:var(--mut); }
+  .ph .link { border:0; background:transparent; padding:0; font-size:10px; font-weight:700; color:var(--accent); cursor:pointer; }
+
+  /* ---- segmented control ---- */
+  .seg { display:flex; background:var(--inset); border:.5px solid var(--line); padding:2px; gap:2px; }
+  .seg button { border:0; cursor:pointer; font-weight:700; background:transparent; color:var(--mut); line-height:1.3; }
+  .seg button.on { background:var(--accent); color:#fff; }
+
+  /* ---- chips ---- */
+  .chip { border:.5px solid var(--line); background:transparent; color:var(--mut); padding:3px 8px; font-size:10.5px; font-weight:700; cursor:pointer; }
+  .chip.on { border-color:var(--accent); background:var(--accent); color:#fff; }
+
+  /* ---- sidebar rows ---- */
+  .dsrow { display:flex; align-items:center; gap:6px; padding:4px 6px; border:.5px solid transparent; background:transparent; cursor:pointer; text-align:left; width:100%; }
+  .prow { display:flex; align-items:center; gap:8px; padding:4px 7px; border:0; background:transparent; cursor:pointer; text-align:left; flex-shrink:0; }
+  .prow:hover { background:var(--inset); }
+
+  /* ---- table ---- */
+  .tscroll { flex:1; min-height:0; overflow:auto; position:relative; }
+  .thead { position:sticky; top:0; z-index:5; display:grid; width:max-content; min-width:100%; background:var(--head); }
+  .thead .corner { position:sticky; left:0; z-index:6; background:var(--head); border-bottom:.5px solid var(--line); border-right:.5px solid var(--line); padding:5px 7px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--mut); }
+  .engcol { border-bottom:.5px solid var(--line); border-right:.5px solid var(--line); padding:5px 7px; text-align:left; font-size:11px; font-weight:700; cursor:pointer; color:var(--fg); line-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .engcol .grip { color:var(--mut); font-size:9px; margin-right:5px; }
+  .engcol .sm { display:inline-block; width:12px; margin-left:4px; text-align:center; color:var(--accent); }
+  .engcol.dragover { box-shadow:inset 0 0 0 2px var(--accent); }
+  .trow { display:grid; width:max-content; min-width:100%; }
+  .section { border-bottom:.5px solid var(--line); background:var(--bg); padding:9px 0 4px; }
+  .section span { position:sticky; left:12px; display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--mut); }
+  .rowlab { position:sticky; left:0; z-index:2; background:var(--card); border:0; border-bottom:.5px solid var(--line); border-right:.5px solid var(--line); padding:var(--pad-y) 8px; text-align:left; font-size:11.5px; font-weight:600; line-height:16px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rowlab:hover { color:var(--accent); }
+  .rowlab .mk { display:inline-block; width:11px; text-align:center; color:var(--accent); }
+  .rowlab .tg { opacity:.55; font-size:10.5px; font-weight:500; margin-left:7px; }
+  .cell { border-bottom:.5px solid rgba(0,0,0,.1); border-right:.5px solid rgba(0,0,0,.14); padding:var(--pad-y) 7px; text-align:right; font-size:11px; font-weight:600; line-height:16px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .cell.q { cursor:pointer; }
+  .cell.q:hover { box-shadow:inset 0 0 0 2px var(--accent); }
+  .legend { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:6px 12px; border-top:.5px solid var(--line); background:var(--head); flex-shrink:0; font-size:10.5px; color:var(--mut); }
+  .legend .sw { width:9px; height:9px; display:inline-block; }
+  .swatch { width:9px; height:9px; flex-shrink:0; display:inline-block; }
+
+  /* ---- charts ---- */
+  .barlab { width:110px; flex-shrink:0; text-align:right; font-size:11px; font-weight:600; color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bartxt { width:74px; flex-shrink:0; font-size:11px; font-variant-numeric:tabular-nums; color:var(--mut); }
+
+  /* ---- explain modal ---- */
+  .modal { position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.68); display:flex; align-items:center; justify-content:center; padding:36px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="data.js"></script>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Data model — keyed by query tag id (Q42, ...), NOT position: engines may omit
+// some queries, so aligning by position would mismatch columns. query_tags[i]
+// gives {id,task,filter,freq}; tag-less results fall back to Q1..QN by position.
+// ---------------------------------------------------------------------------
+const DATA = (window.SEARCHBENCH_DATA || []).filter(d => d && Array.isArray(d.result));
+const HAS_TAGS = DATA.some(d => Array.isArray(d.query_tags) && d.query_tags.some(t => t && t.id));
+for (const d of DATA) {
+  d._byId = {};
+  const qt = Array.isArray(d.query_tags) ? d.query_tags : [];
+  for (let i = 0; i < d.result.length; i++) {
+    const id = (qt[i] && qt[i].id) ? qt[i].id : ("Q" + (i + 1));
+    d._byId[id] = i;
+  }
+}
+function qnumOf(id) { const m = /(\d+)/.exec(id || ""); return m ? +m[1] : 1e9; }
+const QIDS = [], QTAGS = {};
+(function () {
+  const seen = new Set();
+  for (const d of DATA) {
+    const qt = Array.isArray(d.query_tags) ? d.query_tags : [];
+    for (let i = 0; i < d.result.length; i++) {
+      const t = qt[i] || {};
+      if (HAS_TAGS && !t.id) continue;   // untagged engines don't inject Q1..QN rows
+      const id = t.id || ("Q" + (i + 1));
+      if (!seen.has(id)) { seen.add(id); QIDS.push(id); }
+      if (!QTAGS[id] && (t.task || t.filter || t.freq)) QTAGS[id] = t;
+    }
+  }
+  QIDS.sort((a, b) => qnumOf(a) - qnumOf(b) || a.localeCompare(b));
+})();
+const NQ = QIDS.length;
+
+// SereneDB (canonical) always paints in the brand blue so it stands out; every
+// other engine (incl. SereneDB variants) takes a stable palette slot.
+const PALETTE = ["#895af8", "#5ed29a", "#ffb454", "#e06c9f", "#7fd7e0", "#d0c05a", "#ff7b6b", "#9aa7ff", "#f29e7b", "#b48ead"];
+const OTHERS = [...new Set(DATA.map(d => d.system))].filter(s => s !== "SereneDB").sort();
+function colorOf(sys) {
+  if (sys === "SereneDB") return "#3386ff";
+  const i = OTHERS.indexOf(sys);
+  return PALETTE[(i < 0 ? 0 : i) % PALETTE.length];
+}
+
+const SMOOTH = 0.01;                 // 10 ms, ClickBench ratio-smoothing constant
+const TIMEOUT_CAP = 60;              // per-try wall-clock cap (lib/benchmark.sh default)
+const isTimeout = v => typeof v === "number" && v >= TIMEOUT_CAP;
+
+const state = {
+  dataset: null, metric: "hot", valueMode: "relative", tab: "table", scale: "log",
+  sortRow: "geomean", sortDir: 1,
+  hidden: new Set(), activeTags: new Set(), activeQTasks: new Set(),
+  manualOrder: null, sortByEngine: null, sortByEngineDir: 1,
+  sel: null, theme: "dark", max: false, explainOpen: false,
+};
+let dragSys = null, lastOver = null;
+
+// ---- data helpers ----------------------------------------------------------
+const datasets = [...new Set(DATA.map(d => d.dataset))].sort((a, b) => {
+  const ca = DATA.filter(d => d.dataset === a).length, cb = DATA.filter(d => d.dataset === b).length;
+  return cb - ca || a.localeCompare(b);
+});
+function rowsFor(ds) { return DATA.filter(d => d.dataset === ds); }
+function curDataset() {
+  if (state.dataset) return state.dataset;
+  const withPlan = DATA.find(d => Array.isArray(d.explain_analyzes) && d.explain_analyzes.some(x => x && String(x).trim()));
+  return (withPlan && withPlan.dataset) || datasets[0] || null;
+}
+function tagsOf(row) {
+  const name = (row.system || "").toLowerCase();
+  return (row.tags || []).filter(t => String(t).toLowerCase() !== name);
+}
+function tagsFor(ds) {
+  const set = new Set();
+  rowsFor(ds).forEach(r => tagsOf(r).forEach(t => set.add(t)));
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+function passesTagFilter(row) {
+  return state.activeTags.size === 0 || tagsOf(row).some(t => state.activeTags.has(t));
+}
+function qTasksFor() {
+  const set = new Set();
+  QIDS.forEach(id => { const t = QTAGS[id]; if (t && t.task) set.add(t.task); });
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+function queryPasses(id) {
+  if (state.activeQTasks.size === 0) return true;
+  const t = QTAGS[id];
+  return !!(t && t.task && state.activeQTasks.has(t.task));
+}
+function visibleQIDS() { return QIDS.filter(queryPasses); }
+
+function metricValue(row, id) {
+  const qi = row._byId ? row._byId[id] : undefined;
+  if (qi == null) return null;
+  const arr = row.result[qi];
+  if (!Array.isArray(arr)) return null;
+  if (state.metric === "cold") return typeof arr[0] === "number" ? arr[0] : null;
+  const hots = arr.slice(1).filter(x => typeof x === "number");
+  return hots.length ? Math.min(...hots) : null;
+}
+function fastestForQuery(list, id) {
+  const vals = list.map(r => metricValue(r, id)).filter(v => typeof v === "number");
+  return vals.length ? Math.min(...vals) : null;
+}
+function smoothedRatio(t, best) {
+  if (typeof t !== "number" || typeof best !== "number") return null;
+  return (SMOOTH + t) / (SMOOTH + best);
+}
+function ratioOf(t, best) {
+  if (typeof t !== "number" || typeof best !== "number") return null;
+  if (best === 0) return t === 0 ? 1 : Infinity;
+  return t / best;
+}
+
+// ---- formatting ------------------------------------------------------------
+function fmtSec(s) {
+  if (typeof s !== "number") return "—";
+  if (s >= 100) return s.toFixed(0);
+  if (s >= 10) return s.toFixed(1);
+  if (s >= 1) return s.toFixed(2);
+  return s.toFixed(3);
+}
+function fmtBytes(b) {
+  if (typeof b !== "number" || b <= 0) return "—";
+  const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0, v = b;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " " + u[i];
+}
+function fmtMs(s) {
+  if (typeof s !== "number") return "—";
+  const ms = s * 1000;
+  if (ms >= 100) return ms.toFixed(0);
+  if (ms >= 1) return ms.toFixed(1);
+  return ms.toFixed(2);
+}
+function fmtRatio(r) { return typeof r !== "number" ? "—" : !isFinite(r) ? "∞×" : (r >= 100 ? r.toFixed(0) : r.toFixed(2)) + "×"; }
+function ratioBg(ratio) {
+  if (!(ratio > 0)) return "var(--card)";
+  const t = Math.min(1, Math.log2(ratio) / Math.log2(8));
+  return `hsl(${(120 * (1 - t)).toFixed(0)}, 62%, ${(78 - 16 * t).toFixed(0)}%)`;
+}
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+
+// ---- ordering / filtering --------------------------------------------------
+// geomean per engine for `list`, one pass with fastest-per-query memoized.
+function geomeanMap(list) {
+  const ids = visibleQIDS(), fastest = {};
+  for (const id of ids) {
+    let mn = Infinity;
+    for (const r of list) { const v = metricValue(r, id); if (typeof v === "number") mn = Math.min(mn, v); }
+    fastest[id] = isFinite(mn) ? mn : null;
+  }
+  const out = new Map();
+  for (const r of list) {
+    let sum = 0, k = 0;
+    for (const id of ids) {
+      const v = metricValue(r, id);
+      if (isTimeout(v) || typeof v !== "number") continue;   // timeout == unsupported for the mean
+      const best = fastest[id];
+      if (best == null) continue;
+      const ratio = (SMOOTH + v) / (SMOOTH + best);
+      if (ratio > 0) { sum += Math.log(ratio); k++; }
+    }
+    out.set(r.system, k ? Math.exp(sum / k) : null);
+  }
+  return out;
+}
+function sortKeyMap(list) {
+  const k = state.sortRow, m = new Map();
+  if (k === "geomean") { const g = geomeanMap(list); for (const r of list) { const v = g.get(r.system); m.set(r.system, v == null ? Infinity : v); } }
+  else if (k === "load") for (const r of list) m.set(r.system, typeof r.load_time === "number" ? r.load_time : Infinity);
+  else if (k === "size") for (const r of list) m.set(r.system, typeof r.data_size === "number" ? r.data_size : Infinity);
+  else if (k && k.startsWith("q:")) { const id = k.slice(2); for (const r of list) { const v = metricValue(r, id); m.set(r.system, v == null ? Infinity : v); } }
+  else for (const r of list) m.set(r.system, 0);
+  return m;
+}
+function metricSorted(list) {
+  const km = sortKeyMap(list);
+  return [...list].sort((a, b) => {
+    const va = km.get(a.system), vb = km.get(b.system);
+    return va < vb ? -state.sortDir : va > vb ? state.sortDir : a.system.localeCompare(b.system);
+  });
+}
+function orderedVisible(ds) {
+  const vis = rowsFor(ds).filter(r => !state.hidden.has(r.system) && passesTagFilter(r));
+  if (state.manualOrder) {
+    const idx = s => { const i = state.manualOrder.indexOf(s); return i < 0 ? 1e9 : i; };
+    return [...vis].sort((a, b) => idx(a.system) - idx(b.system) || a.system.localeCompare(b.system));
+  }
+  return metricSorted(vis);
+}
+function universeOrder(ds) {
+  const all = rowsFor(ds).map(r => r.system);
+  if (state.manualOrder) {
+    const present = state.manualOrder.filter(s => all.includes(s));
+    return present.concat(all.filter(s => !present.includes(s)).sort());
+  }
+  return metricSorted(rowsFor(ds)).map(e => e.system);
+}
+
+// ---- chart scale helpers ---------------------------------------------------
+function niceLog(min, max) {
+  const lo = Math.pow(10, Math.floor(Math.log10(min)));
+  const hi = Math.pow(10, Math.ceil(Math.log10(max)));
+  const ticks = [];
+  for (let p = Math.log10(lo); p <= Math.log10(hi) + 1e-9; p++) ticks.push(Math.pow(10, Math.round(p)));
+  return { lo, hi, ticks };
+}
+function niceLin(max) {
+  const pow = Math.pow(10, Math.floor(Math.log10(max || 1)));
+  const top = Math.ceil((max || 1) / pow) * pow;
+  const ticks = []; for (let i = 0; i <= 4; i++) ticks.push(top * i / 4);
+  return { lo: 0, hi: top || 1, ticks };
+}
+
+// ---------------------------------------------------------------------------
+// Render helpers
+// ---------------------------------------------------------------------------
+const LOGO = `<svg width="20" height="20" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0"><rect width="32" height="32" rx="8" fill="#895AF8" fill-opacity="0.3"/><path d="M26 16C26 10.4772 21.5228 6 16 6C10.4771 6 6 10.4772 6 16C6 21.5228 10.4771 26 16 26C21.5228 26 26 21.5228 26 16Z" fill="#895AF8"/><path d="M12.6752 19.3255C15.9295 22.5799 20.829 22.9568 23.6185 20.1673C26.4079 17.3779 26.0311 12.4784 22.7767 9.224C19.5223 5.96963 14.6228 5.59275 11.8334 8.38222C9.04393 11.1717 9.42081 16.0712 12.6752 19.3255Z" fill="#80BEFF"/><path d="M17.1782 14.8228C18.8054 16.4499 21.2325 16.661 22.5993 15.2942C23.9662 13.9273 23.7551 11.5002 22.1279 9.87301C20.5007 8.24583 18.0736 8.03477 16.7068 9.40161C15.34 10.7684 15.551 13.1956 17.1782 14.8228Z" fill="white"/></svg>`;
+const CURSOR = `<span style="display:inline-block;width:8px;height:15px;background:var(--accent);margin-left:3px;vertical-align:-2px;animation:sb-blink 1.1s steps(1) infinite"></span>`;
+
+function panel(inner, { grow = false, style = "", fillBody = false } = {}) {
+  const bdCls = (grow || fillBody) ? " fill" : "";
+  return `<div class="panel${grow ? " grow" : ""}"${style ? ` style="${style}"` : ""}><div class="sh"></div><div class="bd${bdCls}">${inner}</div></div>`;
+}
+// segmented control. opts: [{label, v}]. `key` is the data-act name.
+function seg(key, opts, cur, { flex = false, pad = "4px 8px", fs = "11px" } = {}) {
+  return `<div class="seg" style="flex:1">` + opts.map(o =>
+    `<button class="${o.v === cur ? "on" : ""}" data-act="${key}" data-v="${esc(o.v)}" style="${flex ? "flex:1;" : ""}padding:${pad};font-size:${fs}">${esc(o.label)}</button>`
+  ).join("") + `</div>`;
+}
+function segRow(label, key, opts, cur, opt) {
+  return `<div style="display:flex;align-items:center;gap:8px">
+    <span style="width:48px;flex-shrink:0;font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mut)">${label}</span>
+    ${seg(key, opts, cur, opt)}
+  </div>`;
+}
+
+// ---- header ----------------------------------------------------------------
+function renderHeader() {
+  const themeSeg = `<div class="seg" style="margin-left:auto">` +
+    [["dark", "dark"], ["light", "light"]].map(([l, v]) =>
+      `<button class="${state.theme === v ? "on" : ""}" data-act="theme" data-v="${v}" style="padding:3px 8px;font-size:10.5px">${l}</button>`
+    ).join("") + `</div>`;
+  const inner = `<div style="padding:8px 14px;display:flex;align-items:center;gap:10px">
+      ${LOGO}
+      <div style="font-size:15px;font-weight:700;letter-spacing:-.01em">SearchBench${CURSOR}</div>
+      <div style="font-size:11px;color:var(--mut)">full-text search on log-shaped data</div>
+      ${themeSeg}
+    </div>`;
+  return panel(inner);
+}
+
+// ---- sidebar ---------------------------------------------------------------
+function renderSidebar(ds) {
+  const isTable = state.tab === "table", isCharts = state.tab === "charts";
+
+  // config panel
+  let cfg = `<div style="padding:9px;display:flex;flex-direction:column;gap:9px">`;
+  cfg += segRow("view", "tab", [{ label: "Table", v: "table" }, { label: "Charts", v: "charts" }], state.tab, { flex: true });
+  // datasets as a button list
+  const dsRows = datasets.map(name => {
+    const on = name === ds;
+    return `<button class="dsrow" data-act="dataset" data-name="${esc(name)}" style="border-color:${on ? "var(--accent)" : "transparent"};background:${on ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent"}">
+      <span style="color:var(--accent);font-weight:700;font-size:10px;width:7px;opacity:${on ? 1 : 0}">&gt;</span>
+      <span style="flex:1;font-size:12px;font-weight:600;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
+      <span style="font-size:10px;color:var(--mut)">${rowsFor(name).length} eng</span>
+    </button>`;
+  }).join("");
+  cfg += `<div style="display:flex;align-items:flex-start;gap:8px">
+      <span style="width:48px;flex-shrink:0;font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);padding-top:6px">dataset</span>
+      <div style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:0">${dsRows}</div>
+    </div>`;
+  cfg += segRow("run", "metric", [{ label: "Cold", v: "cold" }, { label: "Hot", v: "hot" }], state.metric, { flex: true });
+  if (isTable) cfg += segRow("cells", "cells", [{ label: "Relative", v: "relative" }, { label: "Seconds", v: "sec" }, { label: "Millis", v: "ms" }], state.valueMode, { flex: true, pad: "4px 2px", fs: "10.5px" });
+  if (isCharts) cfg += segRow("scale", "scale", [{ label: "Log", v: "log" }, { label: "Linear", v: "linear" }], state.scale, { flex: true });
+  cfg += `</div>`;
+  const configPanel = panel(
+    `<div class="ph"><span class="pr">&gt;</span><span class="pt">config</span><span class="note" style="margin-left:auto">cold = after cache drop</span></div>${cfg}`
+  );
+
+  // tags panel
+  const allTags = tagsFor(ds);
+  [...state.activeTags].forEach(t => { if (!allTags.includes(t)) state.activeTags.delete(t); });
+  const tagChips = allTags.map(t =>
+    `<button class="chip${state.activeTags.has(t) ? " on" : ""}" data-act="tag" data-tag="${esc(t)}" title="engine shows if it has any selected tag">${esc(t)}</button>`).join("");
+  const tagsPanel = panel(
+    `<div class="ph"><span class="pr">&gt;</span><span class="pt">tags</span>${state.activeTags.size ? `<button class="link" style="margin-left:auto" data-act="clear-tags">clear</button>` : ""}</div>
+     <div style="padding:8px;display:flex;flex-wrap:wrap;gap:5px">${tagChips || `<span class="note">no tags</span>`}</div>`
+  );
+
+  // categories panel
+  const allTasks = qTasksFor();
+  [...state.activeQTasks].forEach(t => { if (!allTasks.includes(t)) state.activeQTasks.delete(t); });
+  const taskChips = allTasks.map(t =>
+    `<button class="chip${state.activeQTasks.has(t) ? " on" : ""}" data-act="qtask" data-task="${esc(t)}" title="show only queries in this category — table + geomean recompute">${esc(t)}</button>`).join("");
+  const catPanel = panel(
+    `<div class="ph"><span class="pr">&gt;</span><span class="pt">categories</span><span class="note">filter queries by task</span>${state.activeQTasks.size ? `<button class="link" style="margin-left:auto" data-act="clear-qtasks">clear</button>` : ""}</div>
+     <div style="padding:8px;display:flex;flex-wrap:wrap;gap:5px">${taskChips || `<span class="note">no categories</span>`}</div>`
+  );
+
+  // participants panel (fills remaining height, scrolls)
+  const order = universeOrder(ds);
+  const bySys = Object.fromEntries(rowsFor(ds).map(r => [r.system, r]));
+  const present = order.filter(s => bySys[s] && passesTagFilter(bySys[s]));
+  const anyHidden = present.some(s => state.hidden.has(s));
+  const partRows = present.map(s => {
+    const off = state.hidden.has(s);
+    return `<button class="prow" data-act="part" data-sys="${esc(s)}" title="click to show / hide" style="opacity:${off ? .4 : 1}">
+      <span class="swatch" style="background:${colorOf(s)}"></span>
+      <span style="flex:1;font-size:12.5px;font-weight:600;color:var(--fg);text-decoration:${off ? "line-through" : "none"};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s)}</span>
+      <span style="font-size:10px;color:var(--mut)">${off ? "hidden" : ""}</span>
+    </button>`;
+  }).join("");
+  const partPanel = panel(
+    `<div class="ph"><span class="pr">&gt;</span><span class="pt">participants</span>${anyHidden ? `<button class="link" style="margin-left:auto" data-act="show-all">show all</button>` : ""}</div>
+     <div id="partscroll" style="flex:1;min-height:0;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:1px">${partRows}</div>`,
+    { grow: true, style: "flex:1;min-height:0;display:flex" }
+  );
+
+  return `<aside style="display:flex;flex-direction:column;gap:11px;min-height:0;min-width:0">${configPanel}${tagsPanel}${catPanel}${partPanel}</aside>`;
+}
+
+// ---- results table ---------------------------------------------------------
+function metricRows(engines) {
+  const relative = state.valueMode === "relative";
+  const q = visibleQIDS().map(id => ({
+    key: "q:" + id, id, label: id, tag: QTAGS[id] || null, section: null, get: r => metricValue(r, id), query: true,
+  }));
+  let sortedBy = null;
+  if (state.sortByEngine) {
+    const eng = rowsFor(state.dataset || curDataset()).find(r => r.system === state.sortByEngine);
+    if (eng) {
+      sortedBy = state.sortByEngine;
+      const key = (id) => {
+        const v = metricValue(eng, id);
+        if (typeof v !== "number") return Infinity;
+        if (!relative) return v;
+        const r = ratioOf(v, fastestForQuery(engines, id));
+        return typeof r === "number" ? r : Infinity;
+      };
+      q.sort((a, b) => { const na = key(a.id), nb = key(b.id); return na === nb ? qnumOf(a.id) - qnumOf(b.id) : (na - nb) * state.sortByEngineDir; });
+    }
+  }
+  if (q.length) {
+    q[0].section = sortedBy
+      ? `per-query · sorted by ${sortedBy} ${relative ? "relative coef" : "latency"} (${state.sortByEngineDir === 1 ? "fastest first" : "slowest first"})`
+      : `per-query · ${relative ? "relative to fastest engine" : state.valueMode === "ms" ? "absolute milliseconds" : "absolute seconds"}`;
+  }
+  return [
+    { key: "load", label: "Load time", section: "summary", get: r => r.load_time, fmt: fmtSec },
+    { key: "size", label: "On-disk size", get: r => r.data_size, fmt: fmtBytes },
+    { key: "geomean", label: "Geomean", fmt: fmtRatio, geomean: true },
+  ].concat(q);
+}
+
+function renderTable(ds, engines) {
+  const colW = e => Math.min(184, Math.max(62, Math.round((e.system || "").length * 6.6) + 46));
+  const gridCols = "196px " + engines.map(e => colW(e) + "px").join(" ");
+  const mark = k => state.sortRow === k ? (state.sortDir === 1 ? "▲" : "▼") : "";
+
+  // header
+  let head = `<div class="thead" style="grid-template-columns:${gridCols}"><div class="corner">metric \\ engine</div>`;
+  engines.forEach(e => {
+    const ver = [e.version && e.version !== "unknown" ? "v" + e.version : null, e.os, e.date].filter(Boolean).join(" · ");
+    const tags = tagsOf(e).join(" · ");
+    const tip = [tags, ver].filter(Boolean).join("  —  ") + "  —  click: sort queries by this engine · drag: reorder";
+    const sortedHere = state.sortByEngine === e.system;
+    const smark = sortedHere ? (state.sortByEngineDir === 1 ? "▲" : "▼") : "";
+    const bg = sortedHere ? "color-mix(in srgb, var(--accent) 14%, var(--head))" : "var(--head)";
+    head += `<div class="engcol" draggable="true" data-act="engsort" data-drag="1" data-sys="${esc(e.system)}" title="${esc(tip)}" style="background:${bg}"><span class="grip">⠿</span>${esc(e.system)}<span class="sm">${smark}</span></div>`;
+  });
+  head += `</div>`;
+
+  // body
+  const geoEng = geomeanMap(engines);
+  let body = "";
+  for (const row of metricRows(engines)) {
+    if (row.section) body += `<div class="section"><span>${esc(row.section)}</span></div>`;
+
+    let best = Infinity;
+    for (const e of engines) {
+      const v = row.geomean ? geoEng.get(e.system) : row.get(e);
+      if (typeof v === "number" && (row.query || v > 0)) best = Math.min(best, v);
+    }
+    if (!isFinite(best)) best = null;
+
+    const labColor = state.sortRow === row.key ? "var(--accent)" : "var(--fg)";
+    const tagText = row.tag ? [row.tag.task, row.tag.filter, row.tag.freq].filter(Boolean).join(" · ") : "";
+    let tr = `<div class="trow" style="grid-template-columns:${gridCols}">`;
+    tr += `<button class="rowlab" data-act="sortrow" data-key="${esc(row.key)}" title="sort engines by this row" style="color:${labColor}">${esc(row.label)}<span class="mk">${mark(row.key)}</span>${tagText ? `<span class="tg">${esc(tagText)}</span>` : ""}</button>`;
+
+    for (const e of engines) {
+      const v = row.geomean ? geoEng.get(e.system) : row.get(e);
+      const missing = row.query ? (typeof v !== "number") : !(typeof v === "number" && v > 0);
+      if (missing) { tr += `<div class="cell" style="background:var(--na);color:var(--mut)" title="no result recorded">—</div>`; continue; }
+      const ratio = row.query ? ratioOf(v, best) : (best ? v / best : 1);
+      const timedOut = row.query && isTimeout(v);
+      const text = row.geomean ? fmtRatio(v)
+        : row.query ? (state.valueMode === "relative" ? fmtRatio(ratio) : state.valueMode === "ms" ? fmtMs(v) : fmtSec(v))
+        : row.fmt(v);
+      const isSel = row.query && state.sel && state.sel.sys === e.system && state.sel.id === row.id;
+      const bg = timedOut ? "#000000" : ratioBg(ratio);
+      const fg = timedOut ? "#ffffff" : "#06223f";
+      const tip = timedOut ? `timed out — killed at the ${TIMEOUT_CAP}s cap — click for query`
+        : row.query ? `${fmtSec(v)} s · ${fmtRatio(ratio)} — click for query`
+        : (best ? fmtRatio(v / best) : "");
+      const attr = row.query ? ` data-act="cell" data-sys="${esc(e.system)}" data-id="${esc(row.id)}"` : "";
+      const selShadow = isSel ? ";box-shadow:inset 0 0 0 2px var(--accent)" : "";
+      tr += `<div class="cell${row.query ? " q" : ""}"${attr} title="${esc(tip)}" style="background:${bg};color:${fg}${selShadow}">${timedOut ? "💀 " + text : text}</div>`;
+    }
+    tr += `</div>`;
+    body += tr;
+  }
+
+  // legend
+  const legend = `<div class="legend">
+    <span style="display:inline-flex;align-items:center;gap:4px"><span class="sw" style="background:${ratioBg(1)}"></span>fastest</span>
+    <span style="display:inline-flex;align-items:center;gap:4px"><span class="sw" style="background:${ratioBg(2)}"></span>2×</span>
+    <span style="display:inline-flex;align-items:center;gap:4px"><span class="sw" style="background:${ratioBg(5)}"></span>5×</span>
+    <span style="display:inline-flex;align-items:center;gap:4px"><span class="sw" style="background:${ratioBg(10)}"></span>10×+</span>
+    <span style="display:inline-flex;align-items:center;gap:4px"><span class="sw" style="background:#000"></span>💀 timed out (${TIMEOUT_CAP}s cap)</span>
+    <span>${esc(state.metric)} run · ${state.valueMode === "relative" ? "ratio to fastest" : state.valueMode === "ms" ? "absolute milliseconds" : "absolute seconds"} · click a cell for its query · click a row label or engine header to sort · drag a column to reorder</span>
+  </div>`;
+
+  const shown = engines.length, total = rowsFor(ds).length;
+  const vqN = visibleQIDS().length;
+  const metaText = `${ds} · ${shown === total ? total + " engines" : shown + " of " + total + " engines"} · ${vqN === NQ ? NQ + " queries" : vqN + " of " + NQ + " queries"} × 3 runs`;
+
+  return panel(
+    `<div class="ph" style="padding:6px 12px"><span class="pr">&gt;</span><span class="pt">results</span><span class="note" style="margin-left:auto;font-size:11px">${esc(metaText)}</span>${maxBtn()}</div>
+     <div class="tscroll" id="tscroll">${head}${body}</div>${legend}`,
+    { grow: true, style: "flex:1;min-height:0;display:flex" }
+  );
+}
+
+// ---- charts ----------------------------------------------------------------
+function renderCharts(ds, engines) {
+  const log = state.scale === "log";
+  const ids = visibleQIDS();
+  let min = Infinity, max = -Infinity;
+  for (const id of ids) for (const r of engines) {
+    const v = metricValue(r, id);
+    if (typeof v === "number" && v > 0) { min = Math.min(min, v); max = Math.max(max, v); }
+  }
+  const series = engines.map(e => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--mut)"><span class="swatch" style="background:${colorOf(e.system)}"></span>${esc(e.system)}</span>`).join("");
+
+  let qChart = `<div style="font-size:12.5px;color:var(--mut)">No timing data for the selected engines.</div>`;
+  if (isFinite(min)) {
+    const sc = log ? niceLog(min, max) : niceLin(max);
+    const floor = log ? sc.lo : 0;
+    const pos = v => { const vv = Math.max(v, floor); return log ? (Math.log10(vv) - Math.log10(sc.lo)) / (Math.log10(sc.hi) - Math.log10(sc.lo)) : vv / sc.hi; };
+    const ticks = sc.ticks.map(t => ({ y: (pos(t) * 100).toFixed(2), label: fmtSec(t) }));
+    const chartMinW = (60 + ids.length * (engines.length * 11 + 16)) + "px";
+    const tickLabels = ticks.map(t => `<div style="position:absolute;right:8px;bottom:calc(${t.y}% - 5px);font-size:10px;color:var(--mut)">${t.label}</div>`).join("");
+    const tickLines = ticks.map(t => `<div style="position:absolute;left:0;right:0;bottom:${t.y}%;border-top:1px solid var(--line2)"></div>`).join("");
+    const groups = ids.map(id => {
+      const bars = engines.map(e => {
+        const v = metricValue(e, id);
+        if (typeof v !== "number") return `<div title="${esc(e.system)} · ${esc(id)}: —" style="width:9px;height:0%;background:transparent"></div>`;
+        const p = Math.max(0, pos(v));
+        return `<div title="${esc(e.system)} · ${esc(id)}: ${fmtSec(v)} s" style="width:9px;height:${(p * 100).toFixed(2)}%;min-height:${p < 0.008 ? "2px" : "0"};background:${colorOf(e.system)}"></div>`;
+      }).join("");
+      return `<div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:2px;padding:0 3px">${bars}</div>`;
+    }).join("");
+    const labels = ids.map(id => `<div style="flex:1;text-align:center;font-size:10px;color:var(--mut);padding-top:4px">${esc(id)}</div>`).join("");
+    qChart = `<div style="overflow-x:auto;padding-bottom:6px"><div style="min-width:${chartMinW}">
+        <div style="display:flex">
+          <div style="width:52px;position:relative;height:240px;flex-shrink:0">${tickLabels}</div>
+          <div style="flex:1;position:relative;height:240px;border-left:.5px solid var(--line);border-bottom:.5px solid var(--line)">
+            ${tickLines}
+            <div style="position:absolute;inset:0;display:flex">${groups}</div>
+          </div>
+        </div>
+        <div style="display:flex;margin-left:52px">${labels}</div>
+      </div></div>`;
+  }
+
+  const hBars = (valueOf, fmt) => {
+    const items = engines.map(r => ({ name: r.system, v: valueOf(r) })).filter(x => typeof x.v === "number" && x.v > 0).sort((a, b) => a.v - b.v);
+    if (!items.length) return `<div style="font-size:11px;color:var(--mut)">No data.</div>`;
+    const mn = items[0].v, mx = items[items.length - 1].v;
+    const sc = log ? niceLog(mn, mx) : niceLin(mx);
+    const pos = v => log ? (Math.log10(v) - Math.log10(sc.lo)) / (Math.log10(sc.hi) - Math.log10(sc.lo)) : v / sc.hi;
+    return items.map(it => `<div style="display:flex;align-items:center;gap:8px">
+        <span class="barlab">${esc(it.name)}</span>
+        <div style="flex:1;position:relative;height:13px;background:var(--inset)"><div style="position:absolute;left:0;top:0;bottom:0;width:${Math.max(0.6, pos(it.v) * 100).toFixed(2)}%;background:${colorOf(it.name)}"></div></div>
+        <span class="bartxt">${fmt(it.v)}</span>
+      </div>`).join("");
+  };
+  const loadBars = hBars(r => r.load_time, v => fmtSec(v) + " s");
+  const sizeBars = hBars(r => r.data_size, v => fmtBytes(v));
+
+  const shown = engines.length, total = rowsFor(ds).length;
+  const vqN = visibleQIDS().length;
+  const metaText = `${ds} · ${shown === total ? total + " engines" : shown + " of " + total + " engines"} · ${vqN === NQ ? NQ + " queries" : vqN + " of " + NQ + " queries"} × 3 runs`;
+  const caption = `${metaText} · ${state.metric} run · ${state.scale} scale`;
+
+  const bodyInner = `<div style="flex:1;min-height:0;overflow:auto;padding:12px 14px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">${series}</div>
+      <div style="font-size:12.5px;font-weight:700;margin-bottom:2px">per-query latency</div>
+      <div style="font-size:11px;color:var(--mut);margin-bottom:8px">seconds · lower is better · 0.000 = sub-ms</div>
+      ${qChart}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:18px">
+        <div>
+          <div style="font-size:12.5px;font-weight:700;margin-bottom:2px">load time</div>
+          <div style="font-size:11px;color:var(--mut);margin-bottom:8px">seconds to ingest + index · lower is better</div>
+          <div style="display:flex;flex-direction:column;gap:5px">${loadBars}</div>
+        </div>
+        <div>
+          <div style="font-size:12.5px;font-weight:700;margin-bottom:2px">on-disk size</div>
+          <div style="font-size:11px;color:var(--mut);margin-bottom:8px">data + index footprint · lower is better</div>
+          <div style="display:flex;flex-direction:column;gap:5px">${sizeBars}</div>
+        </div>
+      </div>
+    </div>`;
+  return panel(
+    `<div class="ph" style="padding:6px 12px"><span class="pr">&gt;</span><span class="pt">charts</span><span class="note" style="margin-left:auto;font-size:11px">${esc(caption)}</span>${maxBtn()}</div>${bodyInner}`,
+    { grow: true, style: "flex:1;min-height:0;display:flex" }
+  );
+}
+
+function maxBtn() {
+  const on = state.max;
+  return `<button data-act="max" title="${on ? "restore filters & query panel" : "maximize — hide filters & query panel"}" style="border:.5px solid var(--line);background:${on ? "var(--accent)" : "var(--inset)"};color:${on ? "#fff" : "var(--mut)"};padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:10px">${on ? "⛶ restore" : "⛶ max"}</button>`;
+}
+
+// ---- query panel -----------------------------------------------------------
+function queryPanelData(ds) {
+  if (!state.sel) return null;
+  const r = rowsFor(ds).find(x => x.system === state.sel.sys);
+  if (!r) return null;
+  const id = state.sel.id;
+  const qi = r._byId ? r._byId[id] : undefined;
+  const arr = (qi != null && Array.isArray(r.result[qi])) ? r.result[qi] : [];
+  const v = metricValue(r, id);
+  const best = fastestForQuery(rowsFor(ds).filter(x => !state.hidden.has(x.system) && passesTagFilter(x)), id);
+  const rt = ratioOf(v, best);
+  const tg = QTAGS[id];
+  const title = `${r.system} — ${id}${tg ? " · " + [tg.task, tg.filter, tg.freq].filter(Boolean).join(" · ") : ""}`;
+  const cold = typeof arr[0] === "number" ? fmtSec(arr[0]) + " s" : "—";
+  const runs = arr.map(x => typeof x !== "number" ? "null" : (isTimeout(x) ? "💀" : "") + fmtSec(x)).join(", ");
+  const meta = `${state.metric} ${v == null ? "—" : (isTimeout(v) ? "💀 " : "") + fmtSec(v) + " s"}`
+    + (isTimeout(v) ? ` (timed out — killed at the ${TIMEOUT_CAP}s cap)` : (rt != null ? ` (${fmtRatio(rt)} vs fastest)` : ""))
+    + ` · runs [${runs}] · cold ${cold}`;
+  const q = (qi != null && r.queries && r.queries[qi]) || null;
+  let sql;
+  if (!q) sql = "(query text unavailable — re-run ./ui/build)";
+  else if (q.startsWith("UNSUPPORTED:")) sql = "Not supported by this engine.\n\n" + q;
+  else sql = q;
+  const ea = (Array.isArray(r.explain_analyzes) && qi != null) ? r.explain_analyzes[qi] : null;
+  const ex = (Array.isArray(r.explains) && qi != null) ? r.explains[qi] : null;
+  const plan = (ea && String(ea).trim()) ? ea : ((ex && String(ex).trim()) ? ex : null);
+  return { title, meta, sql, hasPlan: !!plan, plan, planLabel: plan === ea ? "EXPLAIN ANALYZE · actual timings" : "EXPLAIN" };
+}
+
+function renderQueryPanel(qp) {
+  let head = `<div class="ph" style="padding:6px 12px"><span class="pr">&gt;</span><span class="pt">query</span>`;
+  if (qp) {
+    head += `<span style="font-size:12px;font-weight:700;color:var(--fg);margin-left:6px">${esc(qp.title)}</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums">${esc(qp.meta)}</span>`;
+    if (qp.hasPlan) head += `<button data-act="explain-open" title="show the query plan (EXPLAIN)" style="border:.5px solid var(--accent);background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--accent);padding:3px 11px;font-size:10.5px;font-weight:700;cursor:pointer;margin-left:10px">▚ Explain</button>`;
+    head += `<button data-act="qp-close" title="close" style="border:.5px solid var(--line);background:var(--inset);color:var(--fg);width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer;margin-left:10px">×</button>`;
+  }
+  head += `</div>`;
+  const body = qp
+    ? `<div style="flex:1;min-height:0;overflow:auto;padding:10px 12px"><div style="border:.5px solid var(--line);background:var(--inset);padding:9px 12px;font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:var(--fg);font-family:var(--mono)">${esc(qp.sql)}</div></div>`
+    : `<div style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--mut);font-size:12.5px">
+        <span style="color:var(--accent);font-weight:700">~$</span>
+        <span>select a query cell to view the executed query</span>
+        <span style="display:inline-block;width:7px;height:13px;background:var(--mut);animation:sb-blink 1.1s steps(1) infinite"></span>
+      </div>`;
+  return panel(head + body, { fillBody: true, style: "height:186px;flex-shrink:0;display:flex" });
+}
+
+// ---- explain modal ---------------------------------------------------------
+function renderExplain(qp) {
+  if (!(state.explainOpen && qp && qp.hasPlan)) return "";
+  return `<div class="modal" data-act="explain-close">
+    <div data-act="stop" class="panel" style="padding:0 10px 10px 0;width:min(960px,92vw);max-height:86vh;display:flex">
+      <div class="sh"></div>
+      <div class="bd" style="background:#0d0d0d;flex:1;min-width:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:.5px solid rgba(255,255,255,.14);background:#161616;flex-shrink:0">
+          <span style="color:var(--accent);font-weight:700;font-size:12px">&gt;</span>
+          <span style="font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)">${esc(qp.planLabel)}</span>
+          <span style="font-size:12.5px;font-weight:700;color:#f2f2f2;margin-left:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(qp.title)}</span>
+          <button data-act="explain-close" title="close (Esc)" style="margin-left:auto;border:.5px solid rgba(255,255,255,.2);background:#232323;color:#f2f2f2;width:24px;height:24px;font-size:14px;line-height:1;cursor:pointer;flex-shrink:0">×</button>
+        </div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:16px 18px"><pre style="margin:0;font-family:var(--mono);font-size:12px;line-height:1.45;color:#dcdcdc;white-space:pre">${esc(qp.plan)}</pre></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Top-level render
+// ---------------------------------------------------------------------------
+function render() {
+  const app = document.getElementById("app");
+  // preserve scroll positions across the full innerHTML swap
+  const savedT = app.querySelector("#tscroll");
+  const st = savedT ? { l: savedT.scrollLeft, t: savedT.scrollTop } : null;
+  const savedP = app.querySelector("#partscroll");
+  const sp = savedP ? savedP.scrollTop : null;
+
+  const ds = curDataset();
+  let html = renderHeader();
+
+  if (!ds) {
+    html += `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:13px">No results found. Run an engine benchmark, then <code style="margin:0 5px">./ui/build</code>.</div>`;
+    app.innerHTML = html;
+    return;
+  }
+
+  const engines = orderedVisible(ds);
+  const bodyCols = state.max ? "1fr" : "300px 1fr";
+  const sidebar = state.max ? "" : renderSidebar(ds);
+  const mainInner = state.tab === "table" ? renderTable(ds, engines) : renderCharts(ds, engines);
+  const qp = queryPanelData(ds);
+  const queryPanel = state.max ? "" : renderQueryPanel(qp);
+
+  html += `<div style="display:grid;grid-template-columns:${bodyCols};column-gap:14px;flex:1;min-height:0">
+      ${sidebar}
+      <main style="display:flex;flex-direction:column;gap:11px;min-width:0;min-height:0">${mainInner}${queryPanel}</main>
+    </div>`;
+  html += renderExplain(qp);
+
+  app.innerHTML = html;
+
+  // restore scroll
+  const nt = app.querySelector("#tscroll");
+  if (nt && st) { nt.scrollLeft = st.l; nt.scrollTop = st.t; }
+  const np = app.querySelector("#partscroll");
+  if (np && sp != null) np.scrollTop = sp;
+}
+
+// ---------------------------------------------------------------------------
+// Theme + interactions
+// ---------------------------------------------------------------------------
+function getStoredTheme() { try { return localStorage.getItem("sb-theme"); } catch (e) { return null; } }
+function applyTheme(t) {
+  state.theme = t;
+  document.documentElement.setAttribute("data-theme", t);
+  try { localStorage.setItem("sb-theme", t); } catch (e) {}
+}
+
+function wire() {
+  const app = document.getElementById("app");
+
+  app.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-act]");
+    if (!el) return;
+    const act = el.getAttribute("data-act");
+    switch (act) {
+      case "theme": applyTheme(el.getAttribute("data-v")); render(); break;
+      case "tab": state.tab = el.getAttribute("data-v"); render(); break;
+      case "metric": state.metric = el.getAttribute("data-v"); render(); break;
+      case "cells": state.valueMode = el.getAttribute("data-v"); render(); break;
+      case "scale": state.scale = el.getAttribute("data-v"); render(); break;
+      case "dataset": state.dataset = el.getAttribute("data-name"); state.sel = null; state.explainOpen = false; render(); break;
+      case "tag": { const t = el.getAttribute("data-tag"); state.activeTags.has(t) ? state.activeTags.delete(t) : state.activeTags.add(t); render(); break; }
+      case "clear-tags": state.activeTags.clear(); render(); break;
+      case "qtask": { const t = el.getAttribute("data-task"); state.activeQTasks.has(t) ? state.activeQTasks.delete(t) : state.activeQTasks.add(t); render(); break; }
+      case "clear-qtasks": state.activeQTasks.clear(); render(); break;
+      case "part": {
+        const sys = el.getAttribute("data-sys"), ds = curDataset();
+        if (state.hidden.has(sys)) state.hidden.delete(sys);
+        else {
+          const visible = rowsFor(ds).filter(r => !state.hidden.has(r.system) && passesTagFilter(r)).length;
+          if (visible <= 1) break;               // keep at least one engine shown
+          state.hidden.add(sys);
+        }
+        render(); break;
+      }
+      case "show-all": state.hidden.clear(); render(); break;
+      case "max": state.max = !state.max; render(); break;
+      case "sortrow": {
+        const k = el.getAttribute("data-key");
+        if (state.sortRow === k) state.sortDir *= -1; else { state.sortRow = k; state.sortDir = 1; }
+        state.manualOrder = null; render(); break;
+      }
+      case "engsort": {
+        if (dragSys != null) break;               // ignore the click that ends a drag
+        const sys = el.getAttribute("data-sys");
+        if (state.sortByEngine === sys) {
+          if (state.sortByEngineDir === 1) state.sortByEngineDir = -1;
+          else { state.sortByEngine = null; state.sortByEngineDir = 1; }
+        } else { state.sortByEngine = sys; state.sortByEngineDir = 1; }
+        render(); break;
+      }
+      case "cell": state.sel = { sys: el.getAttribute("data-sys"), id: el.getAttribute("data-id") }; render(); break;
+      case "qp-close": state.sel = null; state.explainOpen = false; render(); break;
+      case "explain-open": state.explainOpen = true; render(); break;
+      case "explain-close": state.explainOpen = false; render(); break;
+      case "stop": e.stopPropagation(); break;
+    }
+  });
+
+  // drag-to-reorder engine columns (hover highlight without a full re-render)
+  app.addEventListener("dragstart", (e) => {
+    const th = e.target.closest("[data-drag]"); if (!th) return;
+    dragSys = th.getAttribute("data-sys");
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", dragSys); } catch (_) {}
+  });
+  app.addEventListener("dragover", (e) => {
+    const th = e.target.closest("[data-drag]"); if (!th || dragSys == null) return;
+    e.preventDefault();
+    if (lastOver && lastOver !== th) lastOver.classList.remove("dragover");
+    th.classList.add("dragover"); lastOver = th;
+  });
+  app.addEventListener("drop", (e) => {
+    const th = e.target.closest("[data-drag]"); if (!th || dragSys == null) return;
+    e.preventDefault();
+    const target = th.getAttribute("data-sys"), ds = curDataset();
+    if (target && target !== dragSys) {
+      let order = universeOrder(ds).filter(s => s !== dragSys);
+      let ti = order.indexOf(target);
+      order.splice(ti < 0 ? order.length : ti, 0, dragSys);
+      state.manualOrder = order; state.sortRow = "";
+    }
+    if (lastOver) lastOver.classList.remove("dragover");
+    dragSys = null; lastOver = null;
+    render();
+  });
+  app.addEventListener("dragend", () => {
+    if (lastOver) lastOver.classList.remove("dragover");
+    dragSys = null; lastOver = null;
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.explainOpen) { state.explainOpen = false; render(); }
+  });
+}
+
+function init() {
+  applyTheme(getStoredTheme() === "light" ? "light" : "dark");
+  wire();
+  render();
+}
+init();
+</script>
+</body>
+</html>

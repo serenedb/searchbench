@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Run one OpenSearch query; timing on stderr.
+#
+# stdin = one DSL body. stdout = result rows. stderr last line = curl
+# %{time_total} secs: client round-trip, comparable across engines unlike
+# server-side `took`.
+
+set -euo pipefail
+
+: "${OS_PORT:=9200}"
+OS_URL="http://127.0.0.1:${OS_PORT}"
+INDEX="otel_logs"
+
+q=$(cat)
+# -w appends round-trip secs on final line
+resp=$(curl -fsS -w '\n%{time_total}' -X POST "$OS_URL/$INDEX/_search" \
+    -H 'Content-Type: application/json' --data-binary "$q")
+rt=$(printf '%s\n' "$resp" | tail -n1)
+body=$(printf '%s\n' "$resp" | sed '$d')
+
+# Emit rows per response shape, so every query type yields comparable non-empty result:
+#   * group_by     -> agg buckets ({key, doc_count})  [size:0 + aggs]
+#   * top_k/recent -> hit _source rows                [size:N, hits]
+#   * count        -> total hit count                 [size:0, no aggs]
+# Top-level buckets only (no nested sub-aggs): multi-key GROUP BY like Q41 reports outer-key buckets only.
+jq -c '
+  if (.aggregations != null) then
+    (.aggregations | to_entries[] | .value.buckets[]? | {key: (.key_as_string // .key), doc_count})
+  elif ((.hits.hits | length) > 0) then
+    .hits.hits[]._source
+  else
+    .hits.total.value
+  end
+' <<<"$body"
+printf '%s\n' "$rt" >&2

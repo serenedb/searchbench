@@ -1,0 +1,49 @@
+{
+  "settings": {
+    "number_of_shards":   1,
+    "number_of_replicas": 0,
+    "refresh_interval":   "30s",
+    "codec":              "best_compression",
+    "index.search.concurrent_segment_search.mode": "all",
+    "index.requests.cache.enable": false,
+    "index.queries.cache.enabled": false,
+    "sort": {
+      "field": ["ServiceName", "Timestamp"],
+      "order": ["asc", "asc"]
+    },
+    "analysis": {
+      "tokenizer": {
+        "nonalnum_delim": {
+          "type": "char_group",
+          "tokenize_on_chars": ["whitespace", "punctuation", "symbol"]
+        }
+      },
+      "analyzer": {
+        "body_analyzer": {
+          "type": "custom",
+          "tokenizer": "nonalnum_delim",
+          "filter": ["lowercase"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "Timestamp":          { "type": "date_nanos" },
+      "TraceId":            { "type": "keyword",   "index": false },
+      "SpanId":             { "type": "keyword",   "index": false },
+      "TraceFlags":         { "type": "byte" },
+      "SeverityText":       { "type": "keyword",   "index_options": "docs", "norms": false },
+      "SeverityNumber":     { "type": "byte" },
+      "ServiceName":        { "type": "keyword",   "index_options": "docs", "norms": false },
+      "Body":               { "type": "text", "analyzer": "body_analyzer" },
+      "ResourceSchemaUrl":  { "type": "keyword",   "index": false },
+      "ResourceAttributes": { "type": "flat_object" },
+      "ScopeSchemaUrl":     { "type": "keyword",   "index": false },
+      "ScopeName":          { "type": "keyword",   "index": false },
+      "ScopeVersion":       { "type": "keyword",   "index": false },
+      "ScopeAttributes":    { "type": "flat_object" },
+      "LogAttributes":      { "type": "flat_object" }
+    }
+  }
+}

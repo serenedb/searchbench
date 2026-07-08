@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Print running OS version; labels results JSON
+set -euo pipefail
+: "${OS_PORT:=9200}"
+curl -fsS "http://127.0.0.1:${OS_PORT}/" 2>/dev/null \
+  | jq -r '.version.number // "unknown"'

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Create otel_logs index (v3+positions mapping), bulk-ingest parquet via vendored TextBench ingest.py (Apache-2.0).
+# No-op if $SEARCHBENCH_SKIP_LOAD=yes (set by benchmark.sh between ES|QL and DSL passes).
+
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${OS_PORT:=9200}"
+OS_URL="http://127.0.0.1:${OS_PORT}"
+INDEX="otel_logs"
+
+if [[ "${SEARCHBENCH_SKIP_LOAD:-no}" == "yes" ]]; then
+    echo "[load] SEARCHBENCH_SKIP_LOAD=yes, leaving $INDEX as-is"
+    exit 0
+fi
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] \
+  || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+shopt -s nullglob
+files=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#files[@]} -gt 0 ]] \
+  || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+# Persistent recovery-rate setting; harmless if re-run
+curl -fsS -X PUT "$OS_URL/_cluster/settings" \
+    -H 'Content-Type: application/json' \
+    -d '{"persistent":{"indices.recovery.max_bytes_per_sec":"500mb"}}' \
+    >/dev/null
+
+# Recreate index from scratch
+curl -fsS -X DELETE "$OS_URL/$INDEX" >/dev/null 2>&1 || true
+curl -fsS -X PUT "$OS_URL/$INDEX" \
+    -H 'Content-Type: application/json' \
+    --data-binary @config/index_mapping.json \
+    >/dev/null
+
+# Bulk-ingest; ingest.py reads part_${nnn}.parquet under --local-dir
+ES_URL="$OS_URL" "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py \
+    --index "$INDEX" \
+    --local-dir "$SEARCHBENCH_DATA_DIR" \
+    --files "${#files[@]}"
+
+# Refresh + flush so cold-cache numbers are well-defined
+curl -fsS -X POST "$OS_URL/$INDEX/_refresh" >/dev/null
+curl -fsS -X POST "$OS_URL/$INDEX/_flush"   >/dev/null
+
+# Sanity row count
+count=$(curl -fsS "$OS_URL/$INDEX/_count" | jq -r .count)
+echo "[load] $INDEX docs.count=$count"

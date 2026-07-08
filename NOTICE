@@ -1,0 +1,22 @@
+SearchBench
+Copyright 2026 SereneDB GmbH
+
+Licensed under the Apache License, Version 2.0. See the repository's
+top-level LICENSE for the full text.
+
+This benchmark is informed by two prior works:
+
+1. ClickHouse/TextBench — https://github.com/ClickHouse/TextBench
+   Licensed under Apache-2.0.
+
+   SearchBench fetches its OTel-logs corpus from the public S3 bucket
+   published by TextBench (public-pme.s3.eu-west-3.amazonaws.com/text_bench).
+
+2. ClickHouse/ClickBench — https://github.com/ClickHouse/ClickBench
+   Licensed under CC-BY-NC-SA-4.0.
+
+   The per-engine adapter contract used by SearchBench's runner
+   (./install, ./start, ./stop, ./check, ./load, ./query, ./data-size,
+   ./benchmark.sh) is a design pattern attributable to ClickBench.
+   No source code from ClickBench is included in this repository;
+   the runner at lib/benchmark.sh is original Apache-2.0 work.

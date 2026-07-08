@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Materialize OTel-logs parquet into local data dir; every engine's ./load reads it uniformly.
+#
+# Real scales (1b/10b/50b): wget full part_*.parquet from public bucket.
+# Smoke scales (100k/1m/100m): stream only needed row groups from part_000.parquet
+#   via HTTP byte-range (no full ~40 GB download) into a sliced local file. See lib/slice_parquet.py.
+#
+# Idempotent: correct-count smoke slice left alone; real-scale wget resumes via --continue --timestamping.
+#
+# Env:
+#   SEARCHBENCH_DATA_DIR  destination (REQUIRED). benchmark.sh roots per-dataset so scales never share a dir.
+#   SEARCHBENCH_DATASET   otel_logs_{100k,1m,100m,1b,10b,50b} (default: otel_logs_1b)
+#   SEARCHBENCH_PYTHON    python with pyarrow+requests (default: python3)
+set -euo pipefail
+
+BASE_URL="https://public-pme.s3.eu-west-3.amazonaws.com/text_bench"
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set (no default)}"
+: "${SEARCHBENCH_PYTHON:=python3}"
+
+# Smoke -> bounded row count sliced from part_000; real -> range of full parts.
+case "$SEARCHBENCH_DATASET" in
+    otel_logs_100k) smoke_rows=100000     ;;
+    otel_logs_1m)   smoke_rows=1000000    ;;
+    otel_logs_100m) smoke_rows=100000000  ;;
+    otel_logs_1b)   start=0; end=0  ;;
+    otel_logs_10b)  start=0; end=9  ;;
+    otel_logs_50b)  start=0; end=49 ;;
+    *) echo "unknown dataset: $SEARCHBENCH_DATASET" >&2; exit 1 ;;
+esac
+
+mkdir -p "$SEARCHBENCH_DATA_DIR"
+
+if [[ -n "${smoke_rows:-}" ]]; then
+    out="${SEARCHBENCH_DATA_DIR}/part_000.parquet"
+    if [[ -f "$out" ]] \
+        && have=$("$SEARCHBENCH_PYTHON" "${LIB_DIR}/slice_parquet.py" "$out" --count 2>/dev/null) \
+        && [[ "$have" == "$smoke_rows" ]]; then
+        echo "Smoke slice already present (${smoke_rows} rows): $out"
+    else
+        echo "Slicing first ${smoke_rows} rows of part_000.parquet -> ${out}"
+        echo "(streaming row groups over HTTPS; no full download)"
+        "$SEARCHBENCH_PYTHON" "${LIB_DIR}/slice_parquet.py" \
+            "${BASE_URL}/part_000.parquet" --rows "$smoke_rows" --out "$out"
+    fi
+else
+    echo "Fetching ${SEARCHBENCH_DATASET} (parts ${start}..${end}) -> ${SEARCHBENCH_DATA_DIR}"
+    wget --continue --timestamping --progress=dot:giga \
+        --directory-prefix "${SEARCHBENCH_DATA_DIR}" \
+        --input-file <(seq -f "${BASE_URL}/part_%03g.parquet" "${start}" "${end}")
+fi
+
+echo
+ls -lh "${SEARCHBENCH_DATA_DIR}"

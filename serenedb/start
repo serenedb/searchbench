@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Start the SereneDB container (docker). Idempotent: skip if $PGPORT answers.
+set -euo pipefail
+
+: "${PGHOST:=127.0.0.1}"
+: "${PGPORT:=5499}"
+: "${SERENED_IMAGE:=serenedb/serenedb:26.07.1}"
+: "${SERENED_CONTAINER:=searchbench-serenedb}"
+: "${SERENED_DATA_DIR:=${PWD}/serened_data}"
+
+if psql -h "$PGHOST" -p "$PGPORT" -U postgres -d postgres -c 'SELECT 1' >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Restart the existing container if present, else create it fresh.
+if docker inspect "$SERENED_CONTAINER" >/dev/null 2>&1; then
+    docker start "$SERENED_CONTAINER" >/dev/null
+else
+    mkdir -p "$SERENED_DATA_DIR"; chmod 777 "$SERENED_DATA_DIR"
+    # Image's baked config forces :7890 (flagfile is last-wins), so supply our
+    # own: listen on $PGPORT, data in the mounted /var/lib/serenedb.
+    printf -- '--server_directory=/var/lib/serenedb\n--listen=postgres://0.0.0.0:%s\n--log_storage=stdout\n' \
+        "$PGPORT" > serened.conf
+    # Corpus identity-mounted read-only so create.sql's read_parquet path resolves
+    # inside the container (bind mount is live, so the later download step's files
+    # appear too). Pre-create it kornam-owned so download can write. --network host
+    # = native latency, like the other adapters.
+    corpus=()
+    if [[ -n "${SEARCHBENCH_DATA_DIR:-}" ]]; then
+        mkdir -p "$SEARCHBENCH_DATA_DIR"
+        corpus=(-v "${SEARCHBENCH_DATA_DIR}:${SEARCHBENCH_DATA_DIR}:ro")
+    fi
+    docker run -d \
+        --name "$SERENED_CONTAINER" \
+        --network host \
+        -v "${SERENED_DATA_DIR}:/var/lib/serenedb" \
+        -v "${PWD}/serened.conf:/etc/serenedb/serened.conf:ro" \
+        "${corpus[@]}" \
+        "$SERENED_IMAGE" >/dev/null
+fi
+
+for _ in $(seq 1 180); do
+    psql -h "$PGHOST" -p "$PGPORT" -U postgres -d postgres -c 'SELECT 1' >/dev/null 2>&1 && exit 0
+    sleep 1
+done
+echo "SereneDB did not become ready within 180s" >&2
+docker logs --tail 50 "$SERENED_CONTAINER" 2>&1 >&2 || true
+exit 1

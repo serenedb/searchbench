@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Live progress sidecar for a running ./load; run in a second terminal.
+# Polls pg_stat_progress_create_index + on-disk bytes every interval;
+# exits after two consecutive empty ticks (build done) or on SIGINT.
+
+set -euo pipefail
+
+: "${PGHOST:=127.0.0.1}"
+: "${PGPORT:=5499}"
+: "${PGUSER:=postgres}"
+: "${PGDATABASE:=postgres}"
+: "${SEARCHBENCH_PROGRESS_INTERVAL:=10}"
+: "${SERENED_DATA_DIR:=}"
+PSQL=(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -tA)
+
+read -r -d '' poll_query <<'PG' || true
+SELECT COALESCE(
+  (SELECT format('[create_index:%s] %s / %s tuples (%s%%)',
+                 i.phase,
+                 i.tuples_done,
+                 NULLIF(i.tuples_total, 0),
+                 ROUND(100.0 * i.tuples_done / NULLIF(i.tuples_total, 0), 1))
+     FROM pg_stat_progress_create_index i
+     LIMIT 1),
+  '');
+PG
+
+start=$SECONDS
+prev_disk=0
+idle=0
+while sleep "$SEARCHBENCH_PROGRESS_INTERVAL"; do
+    elapsed=$((SECONDS - start))
+    sql_line=$("${PSQL[@]}" -c "$poll_query" 2>&1) || sql_line="poll ERROR: $sql_line"
+
+    disk_part=
+    if [[ -n "$SERENED_DATA_DIR" && -d "$SERENED_DATA_DIR" ]]; then
+        disk=$(du -sb "$SERENED_DATA_DIR" 2>/dev/null | awk '{print $1}')
+        disk=${disk:-0}
+        delta=$((disk - prev_disk))
+        rate=$((delta / SEARCHBENCH_PROGRESS_INTERVAL))
+        disk_part=$(printf 'disk=%s (+%s, %s/s) | ' \
+            "$(numfmt --to=iec --suffix=B "$disk"  2>/dev/null || echo "$disk")" \
+            "$(numfmt --to=iec --suffix=B "$delta" 2>/dev/null || echo "$delta")" \
+            "$(numfmt --to=iec --suffix=B "$rate"  2>/dev/null || echo "$rate")")
+        prev_disk=$disk
+    fi
+
+    if [[ -z "$sql_line" ]]; then
+        idle=$((idle + 1))
+        printf '[+%ds] %s(no create_index row)\n' "$elapsed" "$disk_part"
+        (( idle >= 2 )) && break
+    else
+        idle=0
+        printf '[+%ds] %s%s\n' "$elapsed" "$disk_part" "$sql_line"
+    fi
+done

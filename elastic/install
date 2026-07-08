@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Check host prereqs for Elasticsearch adapter (docker backend)
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${ES_DATA_DIR:=${PWD}/es-data}"
+: "${ES_IMAGE:=docker.elastic.co/elasticsearch/elasticsearch:9.3.2}"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+for tool in curl jq python3; do
+    command -v "$tool" >/dev/null || die "required tool not on PATH: $tool"
+done
+for mod in pyarrow orjson requests; do
+    "${SEARCHBENCH_PYTHON:-python3}" -c "import $mod" 2>/dev/null \
+      || die "python module '$mod' missing in '${SEARCHBENCH_PYTHON:-python3}'. Set SEARCHBENCH_PYTHON to a venv with it (pip install $mod)."
+done
+
+command -v docker >/dev/null || die "docker not on PATH"
+docker info >/dev/null 2>&1 \
+  || die "docker daemon not responding (try: systemctl start docker; or fix permissions)"
+echo "ES backend: docker ($ES_IMAGE)"
+docker pull --quiet "$ES_IMAGE" >/dev/null   # idempotent, cached
+
+echo "ES_DATA_DIR: $ES_DATA_DIR"
+echo
+echo "OS prerequisites (apply manually before ./start):"
+echo "  sudo sysctl -w vm.max_map_count=262144   # required by ES"
+echo "  # ./start adds --ulimit memlock=-1:-1 automatically."
+echo
+
+# Don't wipe: rerun keeps existing index; ./load owns it
+mkdir -p "$ES_DATA_DIR/data" "$ES_DATA_DIR/logs" "$ES_DATA_DIR/config"
+chmod -R a+rwX "$ES_DATA_DIR" 2>/dev/null || true   # container runs as uid 1000
+
+echo "Adapter ready. Run ./start to launch."

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Load OTel-logs corpus into Postgres + GIN index over to_tsvector('simple', body).
+#
+# Postgres can't read parquet, so a serened container (embeds DuckDB) reads it and
+# streams rows into Postgres via its postgres connector (no CSV round-trip):
+#   serened: ATTACH '<pg conn>' (TYPE postgres);
+#            INSERT INTO pg.otel_logs (...) SELECT ... FROM read_parquet(...);
+#
+# Requires otel_logs to have NO stored generated column: connector COPYs
+# positionally over every column and STORED generated columns aren't COPY-able.
+# Hence full-text is an EXPRESSION GIN index, not a stored body_tsv column.
+# See create_table.sql/create_index.sql.
+
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+
+PSQL_STOP=("${PSQL[@]}" -v ON_ERROR_STOP=1)
+log() { printf '%s\n' "$*" >&2; }
+
+# All 15 OTel columns (parquet lowercase -> table snake_case). timestamp is
+# TIMESTAMPTZ_NS: via TIMESTAMP_NS (drop tz, keep ns) then TIMESTAMP (ns->us);
+# corpus is UTC so dropping zone is safe. Attribute maps -> JSONB via to_json().
+# SELECT_PROJ and INSERT_COLS must stay same order, matching create_table.sql
+# columns (all 15, no id, no generated column).
+SELECT_PROJ="timestamp::TIMESTAMP_NS::TIMESTAMP, traceid, spanid, traceflags::INTEGER, severitytext, severitynumber::INTEGER, servicename, body, resourceschemaurl, to_json(resourceattributes), scopeschemaurl, scopename, scopeversion, to_json(scopeattributes), to_json(logattributes)"
+INSERT_COLS="timestamp, trace_id, span_id, trace_flags, severity_text, severity_number, service_name, body, resource_schema_url, resource_attributes, scope_schema_url, scope_name, scope_version, scope_attributes, log_attributes"
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob
+parquet=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#parquet[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+source_expr="read_parquet('${SEARCHBENCH_DATA_DIR}/part_*.parquet')"
+log "loading ${#parquet[@]} parquet file(s) from ${SEARCHBENCH_DATA_DIR}"
+
+log "[schema] creating otel_logs table"
+"${PSQL_STOP[@]}" -f create_table.sql
+
+log "[ingest] serened (parquet) --postgres connector--> postgres otel_logs"
+insert_sql="
+ATTACH 'host=${PGHOST} port=${PGPORT} dbname=${PGDATABASE} user=${PGUSER}' AS pg (TYPE postgres);
+INSERT INTO pg.otel_logs (${INSERT_COLS})
+SELECT ${SELECT_PROJ} FROM ${source_expr};
+"
+serened_shell "$insert_sql"
+
+rows=$("${PSQL[@]}" -tA -c 'SELECT count(*) FROM otel_logs' 2>/dev/null | tr -d '[:space:]')
+[[ "${rows:-0}" -gt 0 ]] || { echo "otel_logs is empty after INSERT" >&2; exit 1; }
+log "[ingest] otel_logs row count: ${rows}"
+
+log "[analyze] VACUUM ANALYZE otel_logs"
+"${PSQL_STOP[@]}" -c 'VACUUM ANALYZE otel_logs;'
+
+log "[index] building GIN index on to_tsvector('simple', body) + B-tree on (service_name, timestamp)"
+"${PSQL_STOP[@]}" -f create_index.sql
+log "[index] done"

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Stop ParadeDB container; returns 0 even if nothing running.
+# Only stops (never removes container/volume) so cold cycle (stop->drop_caches->start) keeps data. Teardown for clean reload is in ./install.
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+docker stop "$PARADE_CONTAINER" >/dev/null 2>&1 || true
+exit 0

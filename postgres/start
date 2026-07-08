@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Start Postgres-FTS container (idempotent).
+# Also ensures fuzzystrmatch extension (levenshtein() for fuzzy queries Q22-24/48-49/59);
+# here too, not just ./load, so QUERY-ONLY runs (which skip ./load) get it. Idempotent, persists.
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+ensure_ext() {
+    # Wait for server, then create extension
+    local i
+    for i in $(seq 1 30); do
+        "${PSQL[@]}" -c 'SELECT 1' >/dev/null 2>&1 && break
+        sleep 1
+    done
+    "${PSQL[@]}" -c 'CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;' >/dev/null
+}
+
+# Already serving -> ensure extension
+if "${PSQL[@]}" -c 'SELECT 1' >/dev/null 2>&1; then
+    ensure_ext
+    exit 0
+fi
+
+# Stopped container -> restart, then ensure extension
+if docker ps -a --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
+    docker start "$PG_CONTAINER" >/dev/null
+    ensure_ext
+    exit 0
+fi
+
+# Fresh spawn. Host networking (no NAT) matches other adapters for comparable latency;
+# --network host ignores -p, so Postgres listens on $PGPORT via `-c port=`. Data on host
+# bind-mount (see common.sh); image runs as root and chowns PGDATA on init, 777 ensures it can.
+mkdir -p "$PG_DATA_DIR"
+chmod 777 "$PG_DATA_DIR"
+docker run -d \
+    --name "$PG_CONTAINER" \
+    --network host \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_DB=postgres \
+    -e POSTGRES_HOST_AUTH_METHOD=trust \
+    -v "${PG_DATA_DIR}:/var/lib/postgresql/data" \
+    "$PG_IMAGE" -c port="${PGPORT}" >/dev/null
+ensure_ext

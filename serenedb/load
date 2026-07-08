@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Build OTel-logs inverted index over a VIEW of read_parquet.
+#
+# Synchronous (psql foreground, returns when index durable) per ClickBench/searchbench
+# convention so framework's load_time wall-clock is honest.
+#
+# Reads $SEARCHBENCH_DATA_DIR/part_*.parquet -- whatever download step put there;
+# no scale-specific logic here.
+#
+# Live progress: ./watch-load in another terminal; independent of this script so
+# never contributes to load_time.
+
+set -euo pipefail
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${PGHOST:=127.0.0.1}"
+: "${PGPORT:=5499}"
+: "${PGUSER:=postgres}"
+: "${PGDATABASE:=postgres}"
+PSQL=(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -v ON_ERROR_STOP=1)
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] \
+  || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob
+parquet=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#parquet[@]} -gt 0 ]] \
+  || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+"${PSQL[@]}" -v parquet_glob="${SEARCHBENCH_DATA_DIR}/part_*.parquet" -f create.sql

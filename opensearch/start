@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Launch OpenSearch container; idempotent via ./check
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${OS_PORT:=9200}"
+: "${OS_DATA_DIR:=${PWD}/os-data}"
+: "${OS_IMAGE:=opensearchproject/opensearch:2.18.0}"
+: "${OS_CONTAINER:=searchbench-os}"
+# JVM heap; SEARCHBENCH_HEAP keeps ES/OS equal (both), OS_HEAP overrides one
+: "${OS_HEAP:=${SEARCHBENCH_HEAP:-30g}}"
+
+if ./check >/dev/null 2>&1; then
+    echo "OS already up on :${OS_PORT}"
+    exit 0
+fi
+
+mkdir -p "$OS_DATA_DIR/data" "$OS_DATA_DIR/logs"
+
+# Restart existing container, else create fresh
+if docker inspect "$OS_CONTAINER" >/dev/null 2>&1; then
+    docker start "$OS_CONTAINER" >/dev/null
+else
+    # Only data dir bind-mounted; GC logs stay in container (docker logs)
+    # --network host: no NAT; bind via http.port, http.host=0.0.0.0
+    docker run -d \
+        --name "$OS_CONTAINER" \
+        --network host \
+        -e discovery.type=single-node \
+        -e "http.port=${OS_PORT}" \
+        -e "http.host=0.0.0.0" \
+        -e DISABLE_SECURITY_PLUGIN=true \
+        -e bootstrap.memory_lock=true \
+        -e "OPENSEARCH_JAVA_OPTS=-Xms${OS_HEAP} -Xmx${OS_HEAP}" \
+        --ulimit memlock=-1:-1 \
+        --ulimit nofile=65535:65535 \
+        -v "${OS_DATA_DIR}/data:/usr/share/opensearch/data" \
+        "$OS_IMAGE" >/dev/null
+fi
+
+for _ in $(seq 1 180); do
+    if ./check >/dev/null 2>&1; then
+        echo "OS up on :${OS_PORT} (backend=docker)"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "OS did not become healthy within 180s." >&2
+docker logs --tail 50 "$OS_CONTAINER" 2>&1 >&2 || true
+exit 1

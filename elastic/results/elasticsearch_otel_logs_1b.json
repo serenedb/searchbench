@@ -1,0 +1,1032 @@
+{
+  "system": "Elasticsearch",
+  "version": "9.3.2",
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-07-04",
+  "dataset": "otel_logs_1b",
+  "tags": [
+    "Java",
+    "Lucene",
+    "Elasticsearch",
+    "REST",
+    "DSL"
+  ],
+  "load_time": 11750.893,
+  "data_size": 188676527141,
+  "result": [
+    [
+      0.070582,
+      0.009298,
+      0.008269
+    ],
+    [
+      0.061357,
+      0.008605,
+      0.007672
+    ],
+    [
+      0.349521,
+      0.037035,
+      0.026698
+    ],
+    [
+      0.333796,
+      0.065345,
+      0.044038
+    ],
+    [
+      0.296558,
+      0.019990,
+      0.016564
+    ],
+    [
+      0.270574,
+      0.032881,
+      0.034239
+    ],
+    [
+      0.287769,
+      0.065349,
+      0.065179
+    ],
+    [
+      0.237665,
+      0.032046,
+      0.024095
+    ],
+    [
+      0.884400,
+      0.623783,
+      0.630106
+    ],
+    [
+      0.434859,
+      0.185966,
+      0.184621
+    ],
+    [
+      0.930597,
+      0.594821,
+      0.592070
+    ],
+    [
+      0.322149,
+      0.050403,
+      0.041071
+    ],
+    [
+      0.771614,
+      0.562631,
+      0.555863
+    ],
+    [
+      0.909622,
+      0.666331,
+      0.669269
+    ],
+    [
+      0.664531,
+      0.395904,
+      0.395514
+    ],
+    [
+      0.240344,
+      0.021793,
+      0.025155
+    ],
+    [
+      0.237891,
+      0.058960,
+      0.052612
+    ],
+    [
+      0.195637,
+      0.061502,
+      0.041460
+    ],
+    [
+      0.295164,
+      0.022165,
+      0.070199
+    ],
+    [
+      0.202657,
+      0.042384,
+      0.040260
+    ],
+    [
+      0.232191,
+      0.021287,
+      0.018131
+    ],
+    [
+      1.151405,
+      0.033790,
+      0.025503
+    ],
+    [
+      9.237212,
+      0.082964,
+      0.097895
+    ],
+    [
+      0.531590,
+      0.218960,
+      0.126597
+    ],
+    [
+      0.193796,
+      0.058216,
+      0.040860
+    ],
+    [
+      2.095911,
+      0.837154,
+      0.836401
+    ],
+    [
+      1.782416,
+      1.535721,
+      1.535193
+    ],
+    [
+      0.631122,
+      0.308820,
+      0.307690
+    ],
+    [
+      0.852715,
+      0.525457,
+      0.523949
+    ],
+    [
+      0.068942,
+      0.010688,
+      0.009468
+    ],
+    [
+      0.276884,
+      0.034163,
+      0.024061
+    ],
+    [
+      0.240145,
+      0.034854,
+      0.025700
+    ],
+    [
+      0.184923,
+      0.045788,
+      0.033846
+    ],
+    [
+      0.209082,
+      0.045295,
+      0.037371
+    ],
+    [
+      0.156545,
+      0.040169,
+      0.031159
+    ],
+    [
+      0.544615,
+      0.108183,
+      0.073388
+    ],
+    [
+      0.988315,
+      0.489820,
+      0.412740
+    ],
+    [
+      0.464709,
+      0.135501,
+      0.065915
+    ],
+    [
+      0.587222,
+      0.235155,
+      0.195410
+    ],
+    [
+      0.478681,
+      0.074421,
+      0.066450
+    ],
+    [
+      0.562221,
+      0.101088,
+      0.092520
+    ],
+    [
+      1.669373,
+      1.286666,
+      1.283866
+    ],
+    [
+      0.227046,
+      0.062299,
+      0.042648
+    ],
+    [
+      0.285166,
+      0.092332,
+      0.050671
+    ],
+    [
+      0.291338,
+      0.081804,
+      0.047933
+    ],
+    [
+      0.187450,
+      0.054636,
+      0.036367
+    ],
+    [
+      0.147367,
+      0.043580,
+      0.034361
+    ],
+    [
+      0.384566,
+      0.077618,
+      0.066542
+    ],
+    [
+      0.489905,
+      0.137969,
+      0.130661
+    ],
+    [
+      0.187333,
+      0.063465,
+      0.033664
+    ],
+    [
+      1.200475,
+      0.770553,
+      0.750799
+    ],
+    [
+      0.289678,
+      0.075546,
+      0.040546
+    ],
+    [
+      0.168639,
+      0.047419,
+      0.033429
+    ],
+    [
+      0.588084,
+      0.261711,
+      0.272740
+    ],
+    [
+      0.373655,
+      0.124241,
+      0.122644
+    ],
+    [
+      0.443412,
+      0.104413,
+      0.099987
+    ],
+    [
+      0.588812,
+      0.330399,
+      0.261093
+    ],
+    [
+      0.415675,
+      0.135584,
+      0.134113
+    ],
+    [
+      0.327747,
+      0.176861,
+      0.064990
+    ],
+    [
+      0.537360,
+      0.262220,
+      0.258424
+    ],
+    [
+      0.778788,
+      0.300233,
+      0.298171
+    ],
+    [
+      0.464595,
+      0.209707,
+      0.201983
+    ],
+    [
+      1.028225,
+      0.729150,
+      0.732000
+    ],
+    [
+      0.786848,
+      0.537679,
+      0.543376
+    ],
+    [
+      0.524312,
+      0.318518,
+      0.318997
+    ],
+    [
+      0.449439,
+      0.185781,
+      0.191062
+    ],
+    [
+      0.984187,
+      0.732394,
+      0.733269
+    ],
+    [
+      0.349787,
+      0.096042,
+      0.064051
+    ],
+    [
+      0.611317,
+      0.144239,
+      0.125592
+    ],
+    [
+      0.259898,
+      0.078342,
+      0.061946
+    ],
+    [
+      0.761743,
+      0.512295,
+      0.495698
+    ],
+    [
+      0.348636,
+      0.172689,
+      0.147129
+    ],
+    [
+      1.274624,
+      0.980050,
+      0.956342
+    ],
+    [
+      0.531712,
+      0.353650,
+      0.333468
+    ],
+    [
+      1.951029,
+      1.388541,
+      1.482576
+    ],
+    [
+      0.520644,
+      0.143836,
+      0.080346
+    ],
+    [
+      0.829821,
+      0.406703,
+      0.484780
+    ],
+    [
+      0.203712,
+      0.049637,
+      0.039658
+    ],
+    [
+      0.300033,
+      0.091066,
+      0.052469
+    ],
+    [
+      0.213342,
+      0.047612,
+      0.039675
+    ],
+    [
+      0.121218,
+      0.022099,
+      0.021250
+    ],
+    [
+      0.148163,
+      0.042484,
+      0.036494
+    ],
+    [
+      0.310815,
+      0.086279,
+      0.052532
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ]
+  ],
+  "query_tags": [
+    {
+      "id": "Q01",
+      "task": "count",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q02",
+      "task": "count",
+      "filter": "term",
+      "freq": "lo"
+    },
+    {
+      "id": "Q03",
+      "task": "count",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q04",
+      "task": "count",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q05",
+      "task": "count",
+      "filter": "and",
+      "freq": "lo"
+    },
+    {
+      "id": "Q06",
+      "task": "count",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q07",
+      "task": "count",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q08",
+      "task": "count",
+      "filter": "or",
+      "freq": "mid"
+    },
+    {
+      "id": "Q09",
+      "task": "count",
+      "filter": "or,minmatch",
+      "freq": "hi"
+    },
+    {
+      "id": "Q10",
+      "task": "count",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q11",
+      "task": "count",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q12",
+      "task": "count",
+      "filter": "phrase",
+      "freq": "lo"
+    },
+    {
+      "id": "Q13",
+      "task": "count",
+      "filter": "phrase,proximity",
+      "freq": "hi"
+    },
+    {
+      "id": "Q14",
+      "task": "count",
+      "filter": "phrase,or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q15",
+      "task": "count",
+      "filter": "phrase,and",
+      "freq": "mid"
+    },
+    {
+      "id": "Q16",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q17",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q18",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "mid"
+    },
+    {
+      "id": "Q19",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q20",
+      "task": "count",
+      "filter": "prefix",
+      "freq": "mid"
+    },
+    {
+      "id": "Q21",
+      "task": "count",
+      "filter": "prefix",
+      "freq": "hi"
+    },
+    {
+      "id": "Q22",
+      "task": "count",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q23",
+      "task": "count",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q24",
+      "task": "count",
+      "filter": "fuzzy,prefix",
+      "freq": "mid"
+    },
+    {
+      "id": "Q25",
+      "task": "count",
+      "filter": "like",
+      "freq": "mid"
+    },
+    {
+      "id": "Q26",
+      "task": "count",
+      "filter": "like",
+      "freq": "hi"
+    },
+    {
+      "id": "Q27",
+      "task": "count",
+      "filter": "like",
+      "freq": "mid"
+    },
+    {
+      "id": "Q28",
+      "task": "count",
+      "filter": "and,negation",
+      "freq": "hi"
+    },
+    {
+      "id": "Q29",
+      "task": "count",
+      "filter": "or,negation",
+      "freq": "hi"
+    },
+    {
+      "id": "Q30",
+      "task": "count",
+      "filter": "term,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q31",
+      "task": "count",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q32",
+      "task": "count",
+      "filter": "or,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q33",
+      "task": "top_k",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q34",
+      "task": "top_k",
+      "filter": "term",
+      "freq": "mid"
+    },
+    {
+      "id": "Q35",
+      "task": "top_k",
+      "filter": "term",
+      "freq": "lo"
+    },
+    {
+      "id": "Q36",
+      "task": "top_k",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q37",
+      "task": "top_k",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q38",
+      "task": "top_k",
+      "filter": "and",
+      "freq": "lo"
+    },
+    {
+      "id": "Q39",
+      "task": "top_k",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q40",
+      "task": "top_k",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q41",
+      "task": "top_k",
+      "filter": "or",
+      "freq": "mid"
+    },
+    {
+      "id": "Q42",
+      "task": "top_k",
+      "filter": "or,minmatch",
+      "freq": "hi"
+    },
+    {
+      "id": "Q43",
+      "task": "top_k",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q44",
+      "task": "top_k",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q45",
+      "task": "top_k",
+      "filter": "phrase",
+      "freq": "lo"
+    },
+    {
+      "id": "Q46",
+      "task": "top_k",
+      "filter": "regexp",
+      "freq": "mid"
+    },
+    {
+      "id": "Q47",
+      "task": "top_k",
+      "filter": "prefix",
+      "freq": "hi"
+    },
+    {
+      "id": "Q48",
+      "task": "top_k",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q49",
+      "task": "top_k",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q50",
+      "task": "top_k",
+      "filter": "like",
+      "freq": "mid"
+    },
+    {
+      "id": "Q51",
+      "task": "top_k",
+      "filter": "phrase,or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q52",
+      "task": "top_k",
+      "filter": "and,negation",
+      "freq": "hi"
+    },
+    {
+      "id": "Q53",
+      "task": "top_k",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q54",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q55",
+      "task": "group_by",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q56",
+      "task": "group_by",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q57",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q58",
+      "task": "group_by",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q59",
+      "task": "group_by",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q60",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q61",
+      "task": "group_by",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q62",
+      "task": "group_by",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q63",
+      "task": "group_by",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q64",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q65",
+      "task": "group_by",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q66",
+      "task": "group_by",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q67",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q68",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q69",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q70",
+      "task": "recent",
+      "filter": "term,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q71",
+      "task": "recent",
+      "filter": "phrase,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q72",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q73",
+      "task": "recent",
+      "filter": "window",
+      "freq": ""
+    },
+    {
+      "id": "Q74",
+      "task": "recent",
+      "filter": "regexp,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q75",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q76",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q77",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q78",
+      "task": "recent",
+      "filter": "term,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q79",
+      "task": "recent",
+      "filter": "phrase,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q80",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q81",
+      "task": "recent",
+      "filter": "window",
+      "freq": ""
+    },
+    {
+      "id": "Q82",
+      "task": "recent",
+      "filter": "regexp,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q83",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q84",
+      "task": "join",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q85",
+      "task": "join",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q86",
+      "task": "join",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q87",
+      "task": "join",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q88",
+      "task": "join",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q89",
+      "task": "join",
+      "filter": "or",
+      "freq": "mid"
+    },
+    {
+      "id": "Q90",
+      "task": "join",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q91",
+      "task": "join",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q92",
+      "task": "join",
+      "filter": "prefix",
+      "freq": "hi"
+    }
+  ]
+}

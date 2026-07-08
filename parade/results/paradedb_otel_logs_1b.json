@@ -1,0 +1,1033 @@
+{
+  "system": "ParadeDB",
+  "version": "0.24.1",
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-07-06",
+  "dataset": "otel_logs_1b",
+  "tags": [
+    "Rust",
+    "ParadeDB",
+    "pg_search",
+    "Postgres-extension",
+    "BM25",
+    "Tantivy"
+  ],
+  "load_time": 19812,
+  "data_size": 1204232298496,
+  "result": [
+    [
+      6.256,
+      0.412,
+      0.391
+    ],
+    [
+      0.692,
+      0.182,
+      0.165
+    ],
+    [
+      0.782,
+      0.436,
+      0.443
+    ],
+    [
+      1.225,
+      0.456,
+      0.463
+    ],
+    [
+      4.700,
+      0.198,
+      0.197
+    ],
+    [
+      1.147,
+      0.521,
+      0.548
+    ],
+    [
+      1.853,
+      0.384,
+      0.382
+    ],
+    [
+      0.507,
+      0.291,
+      0.266
+    ],
+    [
+      1.356,
+      0.940,
+      0.942
+    ],
+    [
+      1.023,
+      0.430,
+      0.427
+    ],
+    [
+      1.069,
+      0.725,
+      0.764
+    ],
+    [
+      0.606,
+      0.279,
+      0.275
+    ],
+    [
+      0.909,
+      0.714,
+      0.720
+    ],
+    [
+      1.164,
+      0.921,
+      0.947
+    ],
+    [
+      3.031,
+      0.768,
+      0.761
+    ],
+    [
+      0.570,
+      0.421,
+      0.419
+    ],
+    [
+      0.553,
+      0.371,
+      0.369
+    ],
+    [
+      0.483,
+      0.294,
+      0.297
+    ],
+    [
+      0.592,
+      0.385,
+      0.396
+    ],
+    [
+      0.458,
+      0.298,
+      0.296
+    ],
+    [
+      0.584,
+      0.411,
+      0.474
+    ],
+    [
+      0.511,
+      0.262,
+      0.294
+    ],
+    [
+      1.218,
+      0.304,
+      0.304
+    ],
+    [
+      0.598,
+      0.399,
+      0.401
+    ],
+    [
+      0.460,
+      0.289,
+      0.285
+    ],
+    [
+      5.666,
+      2.196,
+      2.181
+    ],
+    [
+      4.229,
+      1.988,
+      1.911
+    ],
+    [
+      0.830,
+      0.423,
+      0.422
+    ],
+    [
+      0.846,
+      0.600,
+      0.597
+    ],
+    [
+      0.580,
+      0.427,
+      0.426
+    ],
+    [
+      1.055,
+      0.593,
+      0.587
+    ],
+    [
+      0.508,
+      0.275,
+      0.314
+    ],
+    [
+      0.105,
+      0.074,
+      0.063
+    ],
+    [
+      0.155,
+      0.131,
+      0.081
+    ],
+    [
+      0.105,
+      0.068,
+      0.046
+    ],
+    [
+      1.460,
+      0.451,
+      0.452
+    ],
+    [
+      0.593,
+      0.488,
+      0.440
+    ],
+    [
+      0.342,
+      0.165,
+      0.170
+    ],
+    [
+      0.528,
+      0.417,
+      0.411
+    ],
+    [
+      0.239,
+      0.172,
+      0.188
+    ],
+    [
+      0.315,
+      0.154,
+      0.153
+    ],
+    [
+      2.909,
+      2.808,
+      2.800
+    ],
+    [
+      0.432,
+      0.310,
+      0.313
+    ],
+    [
+      0.803,
+      0.603,
+      0.602
+    ],
+    [
+      0.435,
+      0.222,
+      0.219
+    ],
+    [
+      0.138,
+      0.088,
+      0.079
+    ],
+    [
+      0.101,
+      0.088,
+      0.087
+    ],
+    [
+      0.106,
+      0.071,
+      0.060
+    ],
+    [
+      0.278,
+      0.133,
+      0.129
+    ],
+    [
+      0.088,
+      0.078,
+      0.078
+    ],
+    [
+      0.846,
+      0.732,
+      0.729
+    ],
+    [
+      0.382,
+      0.295,
+      0.285
+    ],
+    [
+      0.350,
+      0.266,
+      0.267
+    ],
+    [
+      1.197,
+      0.501,
+      0.555
+    ],
+    [
+      0.541,
+      0.340,
+      0.344
+    ],
+    [
+      0.571,
+      0.376,
+      0.377
+    ],
+    [
+      14.692,
+      9.149,
+      9.075
+    ],
+    [
+      8.468,
+      6.185,
+      6.188
+    ],
+    [
+      5.234,
+      3.069,
+      3.064
+    ],
+    [
+      0.752,
+      0.532,
+      0.531
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      5.389,
+      0.577,
+      0.538
+    ],
+    [
+      19.253,
+      12.486,
+      12.412
+    ],
+    [
+      3.200,
+      0.167,
+      0.166
+    ],
+    [
+      1.157,
+      0.508,
+      0.514
+    ],
+    [
+      0.423,
+      0.259,
+      0.260
+    ],
+    [
+      0.991,
+      0.691,
+      0.690
+    ],
+    [
+      0.415,
+      0.240,
+      0.242
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      3.325,
+      0.243,
+      0.242
+    ],
+    [
+      0.478,
+      0.236,
+      0.236
+    ],
+    [
+      0.093,
+      0.028,
+      0.028
+    ],
+    [
+      0.064,
+      0.035,
+      0.034
+    ],
+    [
+      0.028,
+      0.018,
+      0.018
+    ],
+    [
+      0.150,
+      0.059,
+      0.058
+    ],
+    [
+      0.053,
+      0.020,
+      0.020
+    ],
+    [
+      0.010,
+      0.010,
+      0.009
+    ],
+    [
+      0.029,
+      0.018,
+      0.018
+    ],
+    [
+      0.027,
+      0.019,
+      0.019
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ],
+    [
+      60,
+      60,
+      60
+    ]
+  ],
+  "query_tags": [
+    {
+      "id": "Q01",
+      "task": "count",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q02",
+      "task": "count",
+      "filter": "term",
+      "freq": "lo"
+    },
+    {
+      "id": "Q03",
+      "task": "count",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q04",
+      "task": "count",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q05",
+      "task": "count",
+      "filter": "and",
+      "freq": "lo"
+    },
+    {
+      "id": "Q06",
+      "task": "count",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q07",
+      "task": "count",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q08",
+      "task": "count",
+      "filter": "or",
+      "freq": "mid"
+    },
+    {
+      "id": "Q09",
+      "task": "count",
+      "filter": "or,minmatch",
+      "freq": "hi"
+    },
+    {
+      "id": "Q10",
+      "task": "count",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q11",
+      "task": "count",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q12",
+      "task": "count",
+      "filter": "phrase",
+      "freq": "lo"
+    },
+    {
+      "id": "Q13",
+      "task": "count",
+      "filter": "phrase,proximity",
+      "freq": "hi"
+    },
+    {
+      "id": "Q14",
+      "task": "count",
+      "filter": "phrase,or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q15",
+      "task": "count",
+      "filter": "phrase,and",
+      "freq": "mid"
+    },
+    {
+      "id": "Q16",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q17",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q18",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "mid"
+    },
+    {
+      "id": "Q19",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q20",
+      "task": "count",
+      "filter": "prefix",
+      "freq": "mid"
+    },
+    {
+      "id": "Q21",
+      "task": "count",
+      "filter": "prefix",
+      "freq": "hi"
+    },
+    {
+      "id": "Q22",
+      "task": "count",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q23",
+      "task": "count",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q24",
+      "task": "count",
+      "filter": "fuzzy,prefix",
+      "freq": "mid"
+    },
+    {
+      "id": "Q25",
+      "task": "count",
+      "filter": "like",
+      "freq": "mid"
+    },
+    {
+      "id": "Q26",
+      "task": "count",
+      "filter": "like",
+      "freq": "hi"
+    },
+    {
+      "id": "Q27",
+      "task": "count",
+      "filter": "like",
+      "freq": "mid"
+    },
+    {
+      "id": "Q28",
+      "task": "count",
+      "filter": "and,negation",
+      "freq": "hi"
+    },
+    {
+      "id": "Q29",
+      "task": "count",
+      "filter": "or,negation",
+      "freq": "hi"
+    },
+    {
+      "id": "Q30",
+      "task": "count",
+      "filter": "term,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q31",
+      "task": "count",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q32",
+      "task": "count",
+      "filter": "or,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q33",
+      "task": "top_k",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q34",
+      "task": "top_k",
+      "filter": "term",
+      "freq": "mid"
+    },
+    {
+      "id": "Q35",
+      "task": "top_k",
+      "filter": "term",
+      "freq": "lo"
+    },
+    {
+      "id": "Q36",
+      "task": "top_k",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q37",
+      "task": "top_k",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q38",
+      "task": "top_k",
+      "filter": "and",
+      "freq": "lo"
+    },
+    {
+      "id": "Q39",
+      "task": "top_k",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q40",
+      "task": "top_k",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q41",
+      "task": "top_k",
+      "filter": "or",
+      "freq": "mid"
+    },
+    {
+      "id": "Q42",
+      "task": "top_k",
+      "filter": "or,minmatch",
+      "freq": "hi"
+    },
+    {
+      "id": "Q43",
+      "task": "top_k",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q44",
+      "task": "top_k",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q45",
+      "task": "top_k",
+      "filter": "phrase",
+      "freq": "lo"
+    },
+    {
+      "id": "Q46",
+      "task": "top_k",
+      "filter": "regexp",
+      "freq": "mid"
+    },
+    {
+      "id": "Q47",
+      "task": "top_k",
+      "filter": "prefix",
+      "freq": "hi"
+    },
+    {
+      "id": "Q48",
+      "task": "top_k",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q49",
+      "task": "top_k",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q50",
+      "task": "top_k",
+      "filter": "like",
+      "freq": "mid"
+    },
+    {
+      "id": "Q51",
+      "task": "top_k",
+      "filter": "phrase,or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q52",
+      "task": "top_k",
+      "filter": "and,negation",
+      "freq": "hi"
+    },
+    {
+      "id": "Q53",
+      "task": "top_k",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q54",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q55",
+      "task": "group_by",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q56",
+      "task": "group_by",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q57",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q58",
+      "task": "group_by",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q59",
+      "task": "group_by",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q60",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q61",
+      "task": "group_by",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q62",
+      "task": "group_by",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q63",
+      "task": "group_by",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q64",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q65",
+      "task": "group_by",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q66",
+      "task": "group_by",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q67",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q68",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q69",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q70",
+      "task": "recent",
+      "filter": "term,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q71",
+      "task": "recent",
+      "filter": "phrase,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q72",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q73",
+      "task": "recent",
+      "filter": "window",
+      "freq": ""
+    },
+    {
+      "id": "Q74",
+      "task": "recent",
+      "filter": "regexp,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q75",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q76",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q77",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q78",
+      "task": "recent",
+      "filter": "term,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q79",
+      "task": "recent",
+      "filter": "phrase,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q80",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q81",
+      "task": "recent",
+      "filter": "window",
+      "freq": ""
+    },
+    {
+      "id": "Q82",
+      "task": "recent",
+      "filter": "regexp,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q83",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q84",
+      "task": "join",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q85",
+      "task": "join",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q86",
+      "task": "join",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q87",
+      "task": "join",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q88",
+      "task": "join",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q89",
+      "task": "join",
+      "filter": "or",
+      "freq": "mid"
+    },
+    {
+      "id": "Q90",
+      "task": "join",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q91",
+      "task": "join",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q92",
+      "task": "join",
+      "filter": "prefix",
+      "freq": "hi"
+    }
+  ]
+}

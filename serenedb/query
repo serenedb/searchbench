@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Run SQL from stdin against serened.
+# Contract: stdout=tuple-only rows; stderr last line=fractional elapsed seconds
+# from psql \timing; exit 0 ok, non-zero on error.
+
+set -e
+
+: "${PGHOST:=127.0.0.1}"
+: "${PGPORT:=5499}"
+: "${PGUSER:=postgres}"
+: "${PGDATABASE:=postgres}"
+
+query=$(cat)
+
+# \timing + query in one psql session. -A unaligned (faster). No -t on purpose:
+# -t suppresses the "(N rows)" footer, which is the exact protocol row count we
+# need; strip header+footer below to keep tuple-only stdout.
+out=$(printf '\\timing\n%s\n' "$query" \
+    | psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -A 2>&1) || {
+    rc=$?
+    printf '%s\n' "$out" >&2
+    exit "$rc"
+}
+
+# Detect server-side errors (psql may exit 0 in this mode)
+if printf '%s\n' "$out" | grep -qE '^(ERROR|psql: error)'; then
+    printf '%s\n' "$out" >&2
+    exit 1
+fi
+
+# Row count from "(N rows)"/"(1 row)" footer: protocol count, immune to newlines
+# in body. Tagged (non-numeric) so it never collides with timing parsing.
+rows=$(printf '%s\n' "$out" | grep -oE '^\([0-9]+ rows?\)$' | grep -oE '[0-9]+' | tail -n1)
+[[ -z "$rows" ]] && rows=0
+printf 'SEARCHBENCH_ROWS=%s\n' "$rows" >&2
+
+# Tuple-only stdout: drop "Timing is on.", "Time: … ms", "(N rows)" footer, then
+# drop first remaining line (the column header -A prints but -t wouldn't).
+printf '%s\n' "$out" \
+    | grep -vE '^(Timing is on\.$|Time: |\([0-9]+ rows?\)$)' \
+    | tail -n +2 || true
+
+# Last "Time: NNN.NNN ms" -> fractional seconds
+time_ms=$(printf '%s\n' "$out" | grep -oE 'Time: +[0-9]+\.[0-9]+' | awk '{print $2}' | tail -n1)
+if [[ -z "$time_ms" ]]; then
+    echo "no \\timing output found in psql response" >&2
+    exit 1
+fi
+awk -v ms="$time_ms" 'BEGIN { printf "%.3f\n", ms / 1000 }' >&2

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Exit 0 when ES answers queries on $ES_PORT; non-zero otherwise.
+set -euo pipefail
+: "${ES_PORT:=9201}"
+curl -fsS "http://127.0.0.1:${ES_PORT}/_cluster/health?wait_for_status=yellow&timeout=2s" \
+  >/dev/null 2>&1

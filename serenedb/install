@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# SereneDB adapter setup (docker). Wipes container + datadir so ./load rebuilds
+# from scratch (a leftover index would give a bogus instant load_time).
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${SERENED_IMAGE:=serenedb/serenedb:26.07.1}"
+: "${SERENED_CONTAINER:=searchbench-serenedb}"
+: "${SERENED_DATA_DIR:=${PWD}/serened_data}"
+
+command -v docker >/dev/null || { echo "docker not on PATH" >&2; exit 1; }
+command -v psql   >/dev/null || { echo "psql not on PATH"   >&2; exit 1; }
+command -v jq     >/dev/null || { echo "jq not on PATH"     >&2; exit 1; }
+docker info >/dev/null 2>&1  || { echo "docker daemon not reachable" >&2; exit 1; }
+
+echo "SereneDB backend: docker ($SERENED_IMAGE)"
+docker pull --quiet "$SERENED_IMAGE" >/dev/null
+
+docker rm -f "$SERENED_CONTAINER" >/dev/null 2>&1 || true
+# Fully remove the bind-mount datadir (subdirs owned by the image uid) via a
+# throwaway root container so ./start recreates it clean.
+docker run --rm -v "$(dirname "$SERENED_DATA_DIR")":/w alpine \
+    rm -rf "/w/$(basename "$SERENED_DATA_DIR")" >/dev/null 2>&1 || true

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Start ParadeDB container (idempotent): serving->noop; stopped->docker start; else fresh run
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+# Already serving?
+if "${PSQL[@]}" -c 'SELECT 1' >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Stopped container exists -> restart in place so data volume/index survive cold cycle
+if docker ps -a --format '{{.Names}}' | grep -qx "$PARADE_CONTAINER"; then
+    docker start "$PARADE_CONTAINER" >/dev/null
+    exit 0
+fi
+
+# Fresh spawn. HOST_AUTH_METHOD=trust: passwordless psql -U postgres, matching SereneDB adapter.
+# --network host ignores -p, so listen on $PGPORT via `-c port=`.
+# Bind-mount under /mnt/data (see common.sh); image runs as root and chowns PGDATA on init,
+# so 777 on mount parent is required. Raised max_wal_size avoids ~12s checkpoints during 100m ingest.
+mkdir -p "$PARADE_DATA_DIR"
+chmod 777 "$PARADE_DATA_DIR"
+docker run -d \
+    --name "$PARADE_CONTAINER" \
+    --network host \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_DB=postgres \
+    -e POSTGRES_HOST_AUTH_METHOD=trust \
+    -v "${PARADE_DATA_DIR}:/var/lib/postgresql/" \
+    "$PARADE_IMAGE" -c port="${PGPORT}" \
+    -c max_worker_processes=16 \
+    -c max_parallel_workers=16 \
+    -c max_parallel_maintenance_workers=8 \
+    -c max_wal_size=8GB >/dev/null

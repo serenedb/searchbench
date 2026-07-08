@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Print SereneDB query plan for ONE query (from stdin).
+#
+# Called by driver (lib/benchmark.sh) per query under --explain/SEARCHBENCH_EXPLAIN=1;
+# output stored in results explains[] and shown in UI. SereneDB-only; driver skips
+# adapters lacking ./explain.
+#
+# No ON_ERROR_STOP, stderr folded into stdout: surface EXPLAIN errors as the "plan"
+# instead of aborting the run.
+set -uo pipefail
+
+: "${PGHOST:=127.0.0.1}"
+: "${PGPORT:=5499}"
+: "${PGUSER:=postgres}"
+: "${PGDATABASE:=postgres}"
+
+q=$(cat)
+q=${q%;}   # drop trailing ';' so "EXPLAIN <q>;" stays well-formed
+printf 'EXPLAIN %s;\n' "$q" \
+    | psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -tA -P pager=off 2>&1

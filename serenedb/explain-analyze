@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# EXPLAIN ANALYZE plan for ONE query (stdin); SereneDB-only.
+# Driver runs it per query under --explain-analyze/SEARCHBENCH_EXPLAIN_ANALYZE=1;
+# stored in results explain_analyzes[], shown over plain EXPLAIN in UI.
+# NOTE: re-executes each query for real, adding a full extra run per query.
+set -uo pipefail
+
+: "${PGHOST:=127.0.0.1}"
+: "${PGPORT:=5499}"
+: "${PGUSER:=postgres}"
+: "${PGDATABASE:=postgres}"
+
+q=$(cat)
+q=${q%;}   # drop trailing ';' to keep "EXPLAIN ANALYZE <q>;" well-formed
+printf 'EXPLAIN ANALYZE %s;\n' "$q" \
+    | psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -tA -P pager=off 2>&1

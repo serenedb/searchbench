@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Stop ES container (idempotent); kept, not removed, so ./start resumes it
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${ES_CONTAINER:=searchbench-es}"
+
+if docker inspect "$ES_CONTAINER" >/dev/null 2>&1; then
+    docker stop --time 60 "$ES_CONTAINER" >/dev/null 2>&1 || true
+fi

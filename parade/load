@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Load OTel-logs corpus into ParadeDB, build BM25 (pg_search) index.
+# ParadeDB can't read parquet (pg_analytics archived 2025; pg_parquet/pg_duckdb
+# absent, no PG18 prebuilt), so a serened container (embeds DuckDB) reads parquet
+# and its postgres connector INSERTs straight over the PG wire (binary protocol,
+# no CSV round-trip, no second psql):
+#   serened: ATTACH '<paradedb conn>' (TYPE postgres);
+#            INSERT INTO pg.otel_logs (...) SELECT ... FROM read_parquet(...);
+# Phases: (1) schema, (2) ingest, (3) BM25 index. load_time (driver-measured)
+# covers parquet read + transfer + index build.
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+
+PSQL_STOP=("${PSQL[@]}" -v ON_ERROR_STOP=1)
+log() { printf '%s\n' "$*" >&2; }
+
+# --- parquet projection: parquet (lowercase cols) -> otel_logs columns --------
+# serened lowercases parquet identifiers (preserve_identifier_case=false).
+#   * timestamp is TIMESTAMPTZ_NS; no direct cast to TIMESTAMP, so via
+#     TIMESTAMP_NS (drop tz, keep ns) then TIMESTAMP (ns->us). Corpus is UTC.
+#   * attribute maps JSON-serialized via to_json() into JSONB columns.
+#   * redundant ms twin (timestamptime) not selected.
+# SELECT_PROJ and INSERT_COLS order must match create_table.sql (all 15 cols).
+# id (row_number()) first: connector COPYs positionally over ALL columns, so a
+# col omitted from INSERT_COLS lands NULL not server-generated -- hence id is a
+# plain NOT NULL BIGINT filled here, not GENERATED IDENTITY.
+SELECT_PROJ="row_number() OVER (), timestamp::TIMESTAMP_NS::TIMESTAMP, traceid, spanid, traceflags::INTEGER, severitytext, severitynumber::INTEGER, servicename, body, resourceschemaurl, to_json(resourceattributes), scopeschemaurl, scopename, scopeversion, to_json(scopeattributes), to_json(logattributes)"
+INSERT_COLS="id, timestamp, trace_id, span_id, trace_flags, severity_text, severity_number, service_name, body, resource_schema_url, resource_attributes, scope_schema_url, scope_name, scope_version, scope_attributes, log_attributes"
+
+# Local part_*.parquet from download step (sliced part_000 for smoke, else full).
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob
+parquet=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#parquet[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+source_expr="read_parquet('${SEARCHBENCH_DATA_DIR}/part_*.parquet')"
+limit_clause=""
+log "loading ${#parquet[@]} parquet file(s) from ${SEARCHBENCH_DATA_DIR}"
+
+# --- phase 1: schema ----------------------------------------------------------
+# Table must exist before serened INSERTs.
+log "[schema] creating pg_search extension + otel_logs table"
+"${PSQL_STOP[@]}" -f create_table.sql
+
+# --- phase 2: ingest (serened read_parquet -> ParadeDB via postgres connector) -
+# SINGLE stream, deliberately: parallelizing INSERT across N serened procs was a
+# net loss (insert isn't the bottleneck; N streams add startups + redundant
+# decode + heap/WAL contention). Dominant cost is BM25 CREATE INDEX, which IS
+# parallelized (see create_index.sql + parade/start worker limits).
+log "[ingest] serened (parquet) --postgres connector--> ParadeDB otel_logs"
+insert_sql="
+ATTACH 'host=${PGHOST} port=${PGPORT} dbname=${PGDATABASE} user=${PGUSER}' AS pg (TYPE postgres);
+INSERT INTO pg.otel_logs (${INSERT_COLS})
+SELECT ${SELECT_PROJ} FROM ${source_expr}${limit_clause};
+"
+_t=$SECONDS
+serened_shell "$insert_sql"
+log "[ingest] took $((SECONDS - _t))s"
+
+rows=$("${PSQL[@]}" -tA -c 'SELECT count(*) FROM otel_logs' 2>/dev/null | tr -d '[:space:]')
+[[ "${rows:-0}" -gt 0 ]] || { echo "otel_logs is empty after INSERT" >&2; exit 1; }
+log "[ingest] otel_logs row count: ${rows}"
+
+# Fresh planner stats before index build (matches ClickBench paradedb adapter).
+log "[analyze] VACUUM ANALYZE otel_logs"
+_t=$SECONDS
+"${PSQL_STOP[@]}" -c 'VACUUM ANALYZE otel_logs;'
+log "[analyze] took $((SECONDS - _t))s"
+
+# --- phase 3: BM25 index build (synchronous) ----------------------------------
+# Foreground psql so load_time == CREATE INDEX wall-clock (ClickBench convention,
+# driver expectation). Run ./watch-load in another terminal for live progress.
+log "[index] building BM25 index otel_logs_idx"
+_t=$SECONDS
+"${PSQL_STOP[@]}" -f create_index.sql
+log "[index] took $((SECONDS - _t))s"

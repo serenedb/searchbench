@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Run SQL from stdin against ParadeDB.
+# Contract: stdout=result rows (tuple-only); stderr last line=fractional
+# elapsed seconds from psql \timing; exit 0 on success.
+# ParadeDB speaks Postgres wire, so identical to SereneDB query script
+# except connection defaults from common.sh.
+set -e
+source "$(dirname "$0")/common.sh"
+
+query=$(cat)
+
+# \timing + query in one psql session. -tA = tuple-only, unaligned.
+# PGOPTIONS sets client_min_messages=error at connect (not via SET, which
+# would print a "SET" tag into tuple-only stdout); suppresses pg_search's
+# benign "Aggregate Scan not used" WARNINGs that would leak into results
+# via the 2>&1 merge and inflate row count.
+out=$(printf '\\timing\n%s\n' "$query" \
+    | PGOPTIONS="-c client_min_messages=error" "${PSQL[@]}" -tA 2>&1) || {
+    rc=$?
+    printf '%s\n' "$out" >&2
+    exit "$rc"
+}
+
+# Detect server-side errors (psql may exit 0 in tuple-only mode)
+if printf '%s\n' "$out" | grep -qE '^(ERROR|psql: error)'; then
+    printf '%s\n' "$out" >&2
+    exit 1
+fi
+
+# Print result, stripping \timing echoes ("Time: … ms" and "Timing is on.")
+printf '%s\n' "$out" | grep -vE '^(Time:|Timing )' || true
+
+# Last "Time: NNN.NNN ms" -> fractional seconds
+time_ms=$(printf '%s\n' "$out" | grep -oE 'Time: +[0-9]+\.[0-9]+' | awk '{print $2}' | tail -n1)
+if [[ -z "$time_ms" ]]; then
+    echo "no \\timing output found in psql response" >&2
+    exit 1
+fi
+awk -v ms="$time_ms" 'BEGIN { printf "%.3f\n", ms / 1000 }' >&2

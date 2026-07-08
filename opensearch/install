@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Check host prereqs for OpenSearch adapter (docker backend).
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${OS_DATA_DIR:=${PWD}/os-data}"
+: "${OS_IMAGE:=opensearchproject/opensearch:2.18.0}"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+for tool in curl jq python3; do
+    command -v "$tool" >/dev/null || die "required tool not on PATH: $tool"
+done
+for mod in pyarrow orjson requests; do
+    "${SEARCHBENCH_PYTHON:-python3}" -c "import $mod" 2>/dev/null \
+      || die "python module '$mod' missing in '${SEARCHBENCH_PYTHON:-python3}'. Set SEARCHBENCH_PYTHON to a venv with it (pip install $mod)."
+done
+
+command -v docker >/dev/null || die "docker not on PATH"
+docker info >/dev/null 2>&1 \
+  || die "docker daemon not responding (try: systemctl start docker; or fix permissions)"
+echo "OS backend: docker ($OS_IMAGE)"
+docker pull --quiet "$OS_IMAGE" >/dev/null   # idempotent, cheap once cached
+
+echo "OS_DATA_DIR: $OS_DATA_DIR"
+echo
+echo "OS prerequisites (apply manually before ./start):"
+echo "  sudo sysctl -w vm.max_map_count=262144   # required by OS"
+echo "  # ./start adds --ulimit memlock=-1:-1 automatically."
+echo
+
+# Don't wipe: re-runs keep the index; ./load owns it.
+mkdir -p "$OS_DATA_DIR/data" "$OS_DATA_DIR/logs" "$OS_DATA_DIR/config"
+chmod -R a+rwX "$OS_DATA_DIR" 2>/dev/null || true   # container runs as uid 1000
+
+echo "Adapter ready. Run ./start to launch."

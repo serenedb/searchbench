@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Run one query against Elasticsearch; timing on stderr.
+# Contract: stdin = ES|QL pipeline or JSON DSL (auto-detected); stdout = rows;
+# stderr last line = curl %{time_total} client round-trip (comparable across
+# engines, unlike server-side `took` which excludes response delivery).
+
+set -euo pipefail
+
+: "${ES_PORT:=9201}"
+ES_URL="http://127.0.0.1:${ES_PORT}"
+INDEX="otel_logs"
+
+q=$(cat)
+
+# Strip leading whitespace to inspect first non-blank char
+trimmed=$(printf '%s' "$q" | sed -e 's/^[[:space:]]*//')
+
+if [[ "${trimmed:0:1}" == "{" ]]; then
+    # DSL _search. Emit rows per response shape (mirrors opensearch/query):
+    #   group_by -> agg buckets; top_k/recent -> _source rows; count -> total
+    url="$ES_URL/$INDEX/_search"; payload="$q"
+    filter='if (.aggregations != null) then
+              (.aggregations | to_entries[] | .value.buckets[]? | {key: (.key_as_string // .key), doc_count})
+            elif ((.hits.hits | length) > 0) then
+              .hits.hits[]._source
+            else
+              .hits.total.value
+            end'
+else
+    # ES|QL -> _query, wrapped as {"query":...}
+    url="$ES_URL/_query"; payload=$(jq -nc --arg q "$q" '{query:$q}'); filter='.values[]? // empty'
+fi
+
+# -w appends client round-trip time (s) on final line
+resp=$(curl -fsS -w '\n%{time_total}' -X POST "$url" \
+    -H 'Content-Type: application/json' --data-binary "$payload")
+rt=$(printf '%s\n' "$resp" | tail -n1)
+body=$(printf '%s\n' "$resp" | sed '$d')
+
+jq -c "$filter" <<<"$body"
+printf '%s\n' "$rt" >&2

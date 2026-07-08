@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Dataset+index bytes in the SereneDB datadir (excludes recycled WAL).
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${SERENED_CONTAINER:=searchbench-serenedb}"
+: "${SERENED_DATA_DIR:=${PWD}/serened_data}"
+
+# Measure inside the running container (owns the files); fall back to the host mount.
+size=$(docker exec "$SERENED_CONTAINER" du -sb --exclude=wal /var/lib/serenedb 2>/dev/null | awk '{print $1}')
+if [[ -z "$size" && -d "$SERENED_DATA_DIR" ]]; then
+    size=$(du -sb --exclude=wal "$SERENED_DATA_DIR" 2>/dev/null | awk '{print $1}')
+fi
+echo "${size:-0}"

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Stop the SereneDB container (idempotent). Kept, not removed, so ./start resumes it.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${SERENED_CONTAINER:=searchbench-serenedb}"
+
+if docker inspect "$SERENED_CONTAINER" >/dev/null 2>&1; then
+    docker stop --time 60 "$SERENED_CONTAINER" >/dev/null 2>&1 || true
+fi

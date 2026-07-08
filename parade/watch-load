@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Live progress sidecar for a running ./load; run in a second terminal.
+# Polls pg_stat_progress_create_index; exits after 2 empty ticks (done) or SIGINT.
+
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+: "${SEARCHBENCH_PROGRESS_INTERVAL:=10}"
+PSQL_T=("${PSQL[@]}" -tA)
+
+read -r -d '' poll_query <<'PG' || true
+SELECT COALESCE(
+  (SELECT format('[create_index:%s] %s / %s tuples (%s%%)',
+                 i.phase,
+                 i.tuples_done,
+                 NULLIF(i.tuples_total, 0),
+                 ROUND(100.0 * i.tuples_done / NULLIF(i.tuples_total, 0), 1))
+     FROM pg_stat_progress_create_index i
+     LIMIT 1),
+  '');
+PG
+
+start=$SECONDS
+idle=0
+while sleep "$SEARCHBENCH_PROGRESS_INTERVAL"; do
+    elapsed=$((SECONDS - start))
+    sql_line=$("${PSQL_T[@]}" -c "$poll_query" 2>&1) \
+        || sql_line="poll ERROR: $sql_line"
+    if [[ -z "$sql_line" ]]; then
+        idle=$((idle + 1))
+        printf '[+%ds] (no create_index row)\n' "$elapsed" >&2
+        (( idle >= 2 )) && break
+    else
+        idle=0
+        printf '[+%ds] %s\n' "$elapsed" "$sql_line" >&2
+    fi
+done

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# One-time setup: wipe container + data dir so each run rebuilds from scratch
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+command -v docker >/dev/null || { echo "docker not found on PATH" >&2; exit 1; }
+command -v psql   >/dev/null || { echo "psql not found on PATH"   >&2; exit 1; }
+command -v jq     >/dev/null || { echo "jq not found on PATH"     >&2; exit 1; }
+docker info >/dev/null 2>&1  || { echo "docker daemon not reachable" >&2; exit 1; }
+
+docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+# Wipe bind-mount dir: Postgres owns it as its own uid (host rm hits EPERM), so
+# clear via throwaway root container. Also drop stale named volume from old layout.
+docker volume rm -f searchbench-postgres-data >/dev/null 2>&1 || true
+if [[ -d "$PG_DATA_DIR" ]]; then
+    docker run --rm -v "${PG_DATA_DIR}:/data" --entrypoint sh alpine \
+        -c 'rm -rf /data/..?* /data/.[!.]* /data/* 2>/dev/null' >/dev/null 2>&1 || true
+fi
