@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Fixed layout width: phones render the full desktop UI zoomed-to-fit
+     (a small PC site) instead of a reflowed mobile layout. Desktop browsers
+     ignore the viewport width, so they lay out at the real window size. -->
+<meta name="viewport" content="width=1280">
 <title>SearchBench — full-text search benchmark</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23895AF8' fill-opacity='.3'/%3E%3Cpath d='M26 16C26 10.48 21.52 6 16 6 10.48 6 6 10.48 6 16c0 5.52 4.48 10 10 10 5.52 0 10-4.48 10-10Z' fill='%23895AF8'/%3E%3Cpath d='M12.68 19.33c3.25 3.25 8.15 3.63 10.94.84 2.79-2.79 2.41-7.69-.84-10.94-3.26-3.25-8.15-3.63-10.94-.84-2.79 2.79-2.41 7.69.84 10.94Z' fill='%2380BEFF'/%3E%3Cpath d='M17.18 14.82c1.63 1.63 4.05 1.84 5.42.47 1.37-1.37 1.16-3.79-.47-5.42-1.63-1.63-4.05-1.84-5.42-.47-1.37 1.37-1.16 3.79.47 5.42Z' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="fonts.css">
