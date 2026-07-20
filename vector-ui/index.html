@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280">
+<title>VectorBench — ANN recall vs QPS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23895AF8' fill-opacity='.3'/%3E%3Cpath d='M26 16C26 10.48 21.52 6 16 6 10.48 6 6 10.48 6 16c0 5.52 4.48 10 10 10 5.52 0 10-4.48 10-10Z' fill='%23895AF8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../ui/fonts.css">
+<style>
+  :root, :root[data-theme="dark"] {
+    --bg:#1c1c1c; --card:#212121; --head:#262626; --inset:#151515;
+    --fg:#fff; --mut:#bbb; --line:rgba(255,255,255,.12); --line2:rgba(255,255,255,.07);
+    --accent:#895af8; --blue:#3386ff; --link:#80beff; color-scheme:dark;
+  }
+  :root[data-theme="light"] {
+    --bg:#fff; --card:#fff; --head:#f7f7f7; --inset:#f0f2f5;
+    --fg:#11121d; --mut:#506182; --line:#e7e7e7; --line2:#f0f0f0;
+    --accent:#895af8; --blue:#3386ff; --link:#4a7aad; color-scheme:light;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; }
+  body { background:var(--bg); color:var(--fg); font-family:'Gilroy',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-size:13px; }
+  a { color:var(--link); text-decoration:none; } a:hover { color:var(--accent); }
+  #app { max-width:1180px; margin:0 auto; padding:16px; display:flex; flex-direction:column; gap:14px; }
+  .panel { border:.5px solid var(--line); background:var(--card); box-shadow:6px 6px 0 rgba(0,0,0,.18); }
+  .ph { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:.5px solid var(--line); background:var(--head); }
+  .pt { font-size:10.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--mut); }
+  .note { font-size:11px; color:var(--mut); }
+  .seg { display:inline-flex; background:var(--inset); border:.5px solid var(--line); padding:2px; gap:2px; }
+  .seg button { border:0; cursor:pointer; font-weight:700; background:transparent; color:var(--mut); padding:4px 12px; font-size:11px; }
+  .seg button.on { background:var(--accent); color:#fff; }
+  .row { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .lab { width:70px; font-size:9.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--mut); }
+  .swatch { width:10px; height:10px; display:inline-block; border-radius:2px; }
+  table { border-collapse:collapse; width:100%; font-size:11.5px; }
+  th,td { border-bottom:.5px solid var(--line); padding:5px 9px; text-align:right; font-variant-numeric:tabular-nums; }
+  th:first-child, td:first-child { text-align:left; }
+  th { color:var(--mut); font-size:10px; text-transform:uppercase; letter-spacing:.06em; font-weight:700; }
+  .bar { height:12px; background:var(--inset); position:relative; min-width:60px; }
+  .bar > div { position:absolute; left:0; top:0; bottom:0; }
+  .empty { padding:40px; text-align:center; color:var(--mut); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="data.js"></script>
+<script>
+"use strict";
+const DATA = (window.VECTORBENCH_DATA || []).filter(d => d && Array.isArray(d.results));
+const DIST_LABEL = { cosine:"Cosine", l2:"L2 (euclidean)", ip:"Inner product" };
+const TIERS = ["small","medium","giant","smoke"];
+const PALETTE = ["#5ed29a","#ffb454","#e06c9f","#7fd7e0","#d0c05a","#ff7b6b","#9aa7ff"];
+
+function colorOf(sys){ if(/serene/i.test(sys)) return "#3386ff";
+  const others=[...new Set(DATA.map(d=>d.system))].filter(s=>!/serene/i.test(s)).sort();
+  const i=others.indexOf(sys); return PALETTE[(i<0?0:i)%PALETTE.length]; }
+
+const state = { distance:null, tier:null, theme:"dark", hidden:new Set() };
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function fmtQ(v){ return v>=1000? (v/1000).toFixed(1)+"k" : v>=100? v.toFixed(0) : v.toFixed(1); }
+function fmtBytes(b){ if(typeof b!=="number"||b<=0) return "—"; const u=["B","KB","MB","GB","TB"]; let i=0,v=b; while(v>=1024&&i<u.length-1){v/=1024;i++;} return (v>=100?v.toFixed(0):v.toFixed(1))+" "+u[i]; }
+function fmtS(s){ if(typeof s!=="number") return "—"; return s>=100?s.toFixed(0)+"s":s>=1?s.toFixed(1)+"s":(s*1000).toFixed(0)+"ms"; }
+
+// distinct (distance,tier) pairs present, ordered.
+function combos(){
+  const seen=new Map();
+  for(const d of DATA){ const key=d.distance+"|"+d.tier; if(!seen.has(key)) seen.set(key,{distance:d.distance,tier:d.tier}); }
+  const order={cosine:0,l2:1,ip:2}, torder={small:0,medium:1,giant:2,smoke:3};
+  return [...seen.values()].sort((a,b)=>(order[a.distance]-order[b.distance])||(torder[a.tier]-torder[b.tier]));
+}
+function distances(){ return [...new Set(combos().map(c=>c.distance))]; }
+function tiersFor(dist){ return [...new Set(combos().filter(c=>c.distance===dist).map(c=>c.tier))]; }
+function cur(){
+  const cs=combos(); if(!cs.length) return null;
+  let dist=state.distance, tier=state.tier;
+  if(!distances().includes(dist)){ dist=cs[0].distance; }
+  const ts=tiersFor(dist); if(!ts.includes(tier)){ tier=ts[0]; }
+  state.distance=dist; state.tier=tier;
+  return { distance:dist, tier:tier, docs: DATA.filter(d=>d.distance===dist && d.tier===tier) };
+}
+
+// build-config identity within a doc (so build-time/size dedupe per build).
+function buildKey(r){ return [r.build_algo,r.quant??"",r.nlist??"",r.m??"",r.ef_construction??"",r.lists??""].join("|"); }
+function buildLabel(r){
+  if(r.build_algo==="ivf") return `ivf·${r.quant||"none"}${r.nlist&&r.nlist!=="auto"?"·nlist="+r.nlist:""}`;
+  if(r.build_algo==="ivfflat") return `ivfflat·lists=${r.lists}`;
+  return `hnsw·m=${r.m}·efc=${r.ef_construction}`;
+}
+
+// recall bands (mirrors the reference harness): coarse 0.55-0.95 @0.05, fine 0.95-1.0 @0.01.
+function bandFor(rec){ if(rec<0.55) return null; if(rec<0.95) return Math.floor((rec-0.55)/0.05); return 40+Math.min(4,Math.floor((rec-0.95)/0.01+1e-9)); }
+// best-QPS point per band -> the Pareto line for an engine.
+function paretoLine(records){
+  const by={};
+  for(const r of records){ const b=bandFor(r.recall_at_k); if(b===null) continue;
+    if(!by[b] || r.qps>by[b].qps) by[b]={recall:r.recall_at_k,qps:r.qps}; }
+  return Object.keys(by).map(k=>by[+k]).sort((a,b)=>a.recall-b.recall);
+}
+
+function chart(docs){
+  const engines=docs.filter(d=>!state.hidden.has(d.system));
+  let pts=[]; for(const d of engines) for(const r of d.results) if(typeof r.recall_at_k==="number"&&typeof r.qps==="number"&&r.qps>0) pts.push(r);
+  if(!pts.length) return `<div class="empty">No recall/QPS points for this selection.</div>`;
+  const W=1080,H=380,padL=64,padR=16,padT=16,padB=44;
+  const rMin=Math.max(0, Math.min(...pts.map(p=>p.recall_at_k))-0.02), rMax=1.0;
+  const qMin=Math.min(...pts.map(p=>p.qps)), qMax=Math.max(...pts.map(p=>p.qps));
+  const lqMin=Math.log10(Math.max(1,qMin*0.9)), lqMax=Math.log10(qMax*1.1);
+  const xOf=r=>padL+(r-rMin)/((rMax-rMin)||1)*(W-padL-padR);
+  const yOf=q=>H-padB-(Math.log10(q)-lqMin)/((lqMax-lqMin)||1)*(H-padT-padB);
+  // gridlines
+  let g="";
+  for(let rr=Math.ceil(rMin/0.05)*0.05; rr<=rMax+1e-9; rr+=0.05){ const x=xOf(rr);
+    g+=`<line x1="${x}" y1="${padT}" x2="${x}" y2="${H-padB}" stroke="var(--line2)"/>`;
+    g+=`<text x="${x}" y="${H-padB+16}" fill="var(--mut)" font-size="10" text-anchor="middle">${rr.toFixed(2)}</text>`; }
+  for(let p=Math.ceil(lqMin); p<=lqMax+1e-9; p++){ const y=yOf(Math.pow(10,p));
+    g+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="var(--line2)"/>`;
+    g+=`<text x="${padL-8}" y="${y+3}" fill="var(--mut)" font-size="10" text-anchor="end">${fmtQ(Math.pow(10,p))}</text>`; }
+  // series
+  let series="";
+  for(const d of engines){ const c=colorOf(d.system);
+    const raw=d.results.filter(r=>typeof r.recall_at_k==="number"&&r.qps>0);
+    for(const r of raw) series+=`<circle cx="${xOf(r.recall_at_k).toFixed(1)}" cy="${yOf(r.qps).toFixed(1)}" r="2.4" fill="${c}" fill-opacity=".35"><title>${esc(d.system)} · recall ${r.recall_at_k.toFixed(4)} · ${fmtQ(r.qps)} qps · ${esc(buildLabel(r))} · effort=${r.search_effort}</title></circle>`;
+    const line=paretoLine(raw);
+    if(line.length){ const pth=line.map((p,i)=>(i?"L":"M")+xOf(p.recall).toFixed(1)+" "+yOf(p.qps).toFixed(1)).join(" ");
+      series+=`<path d="${pth}" fill="none" stroke="${c}" stroke-width="2"/>`;
+      for(const p of line) series+=`<circle cx="${xOf(p.recall).toFixed(1)}" cy="${yOf(p.qps).toFixed(1)}" r="3.6" fill="${c}"/>`; }
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
+    ${g}
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="var(--line)"/>
+    <line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="var(--line)"/>
+    ${series}
+    <text x="${(padL+W-padR)/2}" y="${H-6}" fill="var(--mut)" font-size="11" text-anchor="middle">recall@k  →  (higher = better)</text>
+    <text x="14" y="${(padT+H-padB)/2}" fill="var(--mut)" font-size="11" text-anchor="middle" transform="rotate(-90 14 ${(padT+H-padB)/2})">QPS (log)  ↑</text>
+  </svg>`;
+}
+
+function buildTable(docs){
+  const engines=docs.filter(d=>!state.hidden.has(d.system));
+  const rows=[];
+  for(const d of engines){ const seen=new Set();
+    for(const r of d.results){ const k=buildKey(r); if(seen.has(k)) continue; seen.add(k);
+      rows.push({sys:d.system, label:buildLabel(r), build:r.build_total_s, idx:r.index_disk_bytes}); } }
+  if(!rows.length) return "";
+  const maxB=Math.max(...rows.map(r=>r.build||0),1), maxI=Math.max(...rows.map(r=>r.idx||0),1);
+  const tr=rows.map(r=>`<tr>
+    <td><span class="swatch" style="background:${colorOf(r.sys)}"></span> ${esc(r.sys)}</td>
+    <td>${esc(r.label)}</td>
+    <td><div class="bar"><div style="width:${((r.build||0)/maxB*100).toFixed(1)}%;background:${colorOf(r.sys)}"></div></div></td>
+    <td>${fmtS(r.build)}</td>
+    <td><div class="bar"><div style="width:${((r.idx||0)/maxI*100).toFixed(1)}%;background:${colorOf(r.sys)};opacity:.6"></div></div></td>
+    <td>${fmtBytes(r.idx)}</td></tr>`).join("");
+  return `<table><thead><tr><th>engine</th><th>build config</th><th>build time</th><th></th><th>index size</th><th></th></tr></thead><tbody>${tr}</tbody></table>`;
+}
+
+function seg(key,opts,val){ return `<div class="seg">`+opts.map(o=>`<button class="${o.v===val?"on":""}" data-act="${key}" data-v="${esc(o.v)}">${esc(o.label)}</button>`).join("")+`</div>`; }
+
+function render(){
+  const app=document.getElementById("app");
+  if(!DATA.length){ app.innerHTML=`<div class="panel"><div class="empty">No vector results found. Run an engine's <code>./benchmark-vector.sh --index</code>, then <code>./vector-ui/build</code>.</div></div>`; return; }
+  const c=cur();
+  const distOpts=distances().map(x=>({v:x,label:DIST_LABEL[x]||x}));
+  const tierOpts=tiersFor(c.distance).map(x=>({v:x,label:x[0].toUpperCase()+x.slice(1)}));
+  const ds=c.docs[0];
+  const engineChips=[...new Set(DATA.filter(d=>d.distance===c.distance&&d.tier===c.tier).map(d=>d.system))]
+    .map(s=>`<button class="seg" data-act="toggle" data-sys="${esc(s)}" style="padding:3px 8px;opacity:${state.hidden.has(s)?.4:1}"><span class="swatch" style="background:${colorOf(s)}"></span>&nbsp;${esc(s)}</button>`).join("");
+  app.innerHTML = `
+  <div class="panel"><div class="ph">
+    <span style="font-size:15px;font-weight:700">VectorBench</span>
+    <span class="note">ANN recall vs QPS · SereneDB IVF vs pgvector</span>
+    <span style="margin-left:auto">${seg("theme",[{v:"dark",label:"dark"},{v:"light",label:"light"}],state.theme)}</span>
+  </div>
+  <div style="padding:12px;display:flex;flex-direction:column;gap:10px">
+    <div class="row"><span class="lab">distance</span>${seg("distance",distOpts,c.distance)}</div>
+    <div class="row"><span class="lab">size tier</span>${seg("tier",tierOpts,c.tier)}</div>
+    <div class="row"><span class="lab">engines</span><div style="display:flex;gap:6px;flex-wrap:wrap">${engineChips||'<span class="note">none</span>'}</div></div>
+    <div class="note">dataset <b>${ds?esc(ds.dataset):"—"}</b>${ds?` · dim ${ds.dim} · nb ${ds.nb?.toLocaleString?.()||ds.nb} · nq ${ds.nq} · recall@${ds.k}`:""}</div>
+  </div></div>
+
+  <div class="panel"><div class="ph"><span class="pt">recall vs QPS</span><span class="note" style="margin-left:auto">lines = best QPS per recall band · faint dots = every sweep point · up-and-right is better</span></div>
+    <div style="padding:12px">${chart(c.docs)}</div></div>
+
+  <div class="panel"><div class="ph"><span class="pt">build cost &amp; index size</span><span class="note" style="margin-left:auto">per build config · lower is better</span></div>
+    <div style="padding:12px">${buildTable(c.docs)||'<div class="empty">No build metrics.</div>'}</div></div>
+
+  <div class="panel"><div style="padding:8px 12px" class="note">Generated from <code>*/results-vector/*.json</code> by <code>vector-ui/build</code>. Source: <a href="https://github.com/serenedb/searchbench" target="_blank" rel="noopener">serenedb/searchbench</a>.</div></div>`;
+}
+
+function applyTheme(t){ state.theme=t; document.documentElement.setAttribute("data-theme",t); try{localStorage.setItem("vb-theme",t);}catch(e){} }
+document.addEventListener("click",e=>{ const el=e.target.closest("[data-act]"); if(!el) return;
+  const act=el.getAttribute("data-act");
+  if(act==="theme") applyTheme(el.getAttribute("data-v"));
+  else if(act==="distance"){ state.distance=el.getAttribute("data-v"); state.tier=null; }
+  else if(act==="tier") state.tier=el.getAttribute("data-v");
+  else if(act==="toggle"){ const s=el.getAttribute("data-sys"); state.hidden.has(s)?state.hidden.delete(s):state.hidden.add(s); }
+  render();
+});
+applyTheme((()=>{ try{return localStorage.getItem("vb-theme")==="light"?"light":"dark";}catch(e){return "dark";} })());
+render();
+</script>
+</body>
+</html>

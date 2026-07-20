@@ -89,6 +89,22 @@ real run.
   terminal).
 - No cross-engine correctness validation.
 
+## Vector search
+
+A stand-alone **vector (ANN)** track lives alongside the text harness, reusing
+the same adapter/driver/UI conventions. It measures **recall@k vs QPS** (plus
+build time and index size) for **SereneDB** (IVF) vs **pgvector** — HNSW and
+IVFFlat run as separate series (different algorithms) — across three distances
+(Cosine / L2 / Inner-Product) × three size tiers. The shared
+driver is `lib/benchmark-vector.sh` (mirrors `lib/benchmark.sh`); results land in
+`<engine>/results-vector/` and render via `vector-ui/`. Offline smoke:
+
+```bash
+cd serenedb && SEARCHBENCH_DATA_DIR=/data SEARCHBENCH_VECTOR_DATASET=synthetic ./benchmark-vector.sh --index
+```
+
+See [VECTOR.md](VECTOR.md) for datasets, knobs, the result schema, and the runbook.
+
 ## License
 
 Apache-2.0. OTel-logs corpus + TextBench-derived queries (Apache-2.0);

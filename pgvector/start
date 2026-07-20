@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Start the pgvector container (idempotent). Ensures the `vector` extension here
+# (not just in ./load-vector) so sweep-only runs get it too.
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+ensure_ext() {
+    local i
+    for i in $(seq 1 30); do
+        "${PSQL[@]}" -c 'SELECT 1' >/dev/null 2>&1 && break
+        sleep 1
+    done
+    "${PSQL[@]}" -c 'CREATE EXTENSION IF NOT EXISTS vector;' >/dev/null
+}
+
+# Already serving.
+if "${PSQL[@]}" -c 'SELECT 1' >/dev/null 2>&1; then
+    ensure_ext
+    exit 0
+fi
+
+# Stopped container -> restart.
+if docker ps -a --format '{{.Names}}' | grep -qx "$PGV_CONTAINER"; then
+    docker start "$PGV_CONTAINER" >/dev/null
+    ensure_ext
+    exit 0
+fi
+
+# Fresh spawn. --network host ignores -p, so Postgres listens on $PGPORT via
+# `-c port=`. Data on a host bind-mount; image chowns PGDATA on init, 777 lets it.
+mkdir -p "$PGV_DATA_DIR"
+chmod 777 "$PGV_DATA_DIR"
+docker run -d \
+    --name "$PGV_CONTAINER" \
+    --network host \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_DB=postgres \
+    -e POSTGRES_HOST_AUTH_METHOD=trust \
+    -v "${PGV_DATA_DIR}:/var/lib/postgresql/data" \
+    "$PGV_IMAGE" -c port="${PGPORT}" >/dev/null
+ensure_ext

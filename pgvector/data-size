@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Report the vector table + its HNSW/IVFFlat index bytes on disk (datadir_bytes).
+# pg_total_relation_size covers heap, TOAST, and all indexes on `vec`. Index-only
+# bytes are reported separately by the ingest step (pg_relation_size('vec_idx')).
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+"${PSQL[@]}" -tA -c \
+    "SELECT COALESCE(pg_total_relation_size(to_regclass('public.vec')), 0);" \
+    2>/dev/null || echo 0

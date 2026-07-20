@@ -19,5 +19,12 @@ parade/paradedb_data
 
 postgres/postgres_data
 
+# vector track
+pgvector/pgvector_data
+**/results-vector/*.partial.json
+**/results-vector/*.build.log
+**/vec_work/
+**/*.npy
+
 **/__pycache__/
 .venv
