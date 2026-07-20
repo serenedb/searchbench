@@ -1,6 +1,6 @@
 # SearchBench / SereneDB engine
 
-Runs the official SereneDB Docker image (`serenedb/serenedb:26.07.1`).
+Runs the official SereneDB Docker image (`serenedb/serenedb:26.07.2`).
 Prereqs: `docker`, `psql`, `jq`.
 
 `SEARCHBENCH_DATA_DIR` is the root data dir; the driver roots each scale
@@ -26,7 +26,7 @@ identity-mounted read-only so `create.sql`'s `read_parquet` resolves inside it.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `SERENED_IMAGE` | `serenedb/serenedb:26.07.1` | image |
+| `SERENED_IMAGE` | `serenedb/serenedb:26.07.2` | image |
 | `SERENED_CONTAINER` | `searchbench-serenedb` | container |
 | `SERENED_DATA_DIR` | `$PWD/serened_data` | host bind-mount data dir (→ `/var/lib/serenedb`); wiped by `./install` |
 | `PGPORT` | `5499` | pg-wire host port |

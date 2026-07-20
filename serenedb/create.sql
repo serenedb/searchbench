@@ -60,10 +60,7 @@ FROM read_parquet(:'parquet_glob');
 -- against the index relation otel_logs_idx (an IRESEARCH_SCAN binds the @@ to
 -- this indexed expression; a plain scan of the otel_logs view would seq-scan).
 CREATE INDEX otel_logs_idx ON otel_logs USING inverted(
-    (ts_split_by_non_alpha(Body, true)) en,
-    ServiceName,
-    SeverityNumber,
-    Timestamp
+    (ts_split_by_non_alpha(Body, true)) en
 )
 INCLUDE (
     Timestamp,
