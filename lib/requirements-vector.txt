@@ -1,0 +1,6 @@
+# Vector track deps — in addition to lib/requirements.txt (which already pins
+# pyarrow, used to stage/load parquet). Install both:
+#   pip install -r lib/requirements.txt -r lib/requirements-vector.txt
+numpy>=1.24
+h5py>=3.8            # ann-benchmarks HDF5 datasets (GloVe, GIST, dbpedia-openai)
+psycopg[binary]>=3.2 # pgwire client for ingest + the binary-bound KNN sweep

@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Materialize a vector dataset into $SEARCHBENCH_DATA_DIR (which benchmark-vector.sh
+# has already rooted per-dataset, mirroring lib/download-otel-logs). The dataset
+# registry lives in lib/vector_common.py; this reads it via the `meta` CLI so the
+# registry stays the one source of truth.
+#
+# Per format:
+#   synthetic : nothing to fetch (vectors generated in-process).
+#   hdf5      : wget the ann-benchmarks .hdf5 (ships base+queries+ground-truth).
+#   fbin/hf   : big-ann .fbin/.ibin or HuggingFace parquet — too large / auth'd to
+#               fetch blindly here. If the files are already present we proceed;
+#               otherwise we print how to stage them and exit non-zero (override
+#               with SEARCHBENCH_SKIP_DOWNLOAD=yes once mounted externally).
+#
+# Env:
+#   SEARCHBENCH_DATA_DIR       dataset dir (REQUIRED; rooted per-dataset by the driver)
+#   SEARCHBENCH_VECTOR_DATASET registry key, e.g. glove_cosine_small (REQUIRED)
+#   SEARCHBENCH_PYTHON         python with the vector deps (default python3)
+#   SEARCHBENCH_SKIP_DOWNLOAD  yes|no (default no)
+set -euo pipefail
+
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set (rooted per-dataset by the driver)}"
+: "${SEARCHBENCH_VECTOR_DATASET:?SEARCHBENCH_VECTOR_DATASET must be set}"
+: "${SEARCHBENCH_PYTHON:=python3}"
+: "${SEARCHBENCH_SKIP_DOWNLOAD:=no}"
+
+KEY="$SEARCHBENCH_VECTOR_DATASET"
+DIR="$SEARCHBENCH_DATA_DIR"
+mkdir -p "$DIR"
+
+meta=$("$SEARCHBENCH_PYTHON" "${LIB_DIR}/vector_common.py" meta "$KEY")
+fmt=$(printf '%s' "$meta" | jq -r '.fmt')
+src=$(printf '%s' "$meta" | jq -r '.source')
+opt_in=$(printf '%s' "$meta" | jq -r '.opt_in // false')
+
+echo "vector dataset : $KEY"
+echo "format         : $fmt"
+echo "dest dir       : $DIR"
+echo "source         : $src"
+[[ "$opt_in" == "true" ]] && echo "NOTE: giant/opt-in tier — large download, run only on capable hardware."
+
+if [[ "$SEARCHBENCH_SKIP_DOWNLOAD" == "yes" ]]; then
+    echo "SEARCHBENCH_SKIP_DOWNLOAD=yes — assuming data already present in $DIR"
+    exit 0
+fi
+
+case "$fmt" in
+    synthetic)
+        echo "synthetic dataset — generated in-process, nothing to download."
+        ;;
+    hdf5)
+        file=$(printf '%s' "$meta" | jq -r '.files.hdf5[0]')
+        url="$src"
+        out="${DIR}/${file}"
+        if [[ -s "$out" ]]; then
+            echo "already present: $out"
+        else
+            echo "fetching $url -> $out"
+            wget --continue --timestamping --progress=dot:giga -O "$out" "$url"
+        fi
+        ;;
+    fbin|hf)
+        # Verify the expected files already exist (staged via big-ann-benchmarks
+        # create_dataset.py for fbin, or a HuggingFace parquet for hf).
+        if "$SEARCHBENCH_PYTHON" "${LIB_DIR}/vector_common.py" haslocal "$KEY" "$DIR"; then
+            echo "found staged files in $DIR — proceeding."
+        else
+            cat >&2 <<EOF
+ERROR: no staged files for '$KEY' in $DIR.
+  This tier is not auto-fetched. Stage it, then re-run:
+    $src
+  (fbin: big-ann-benchmarks create_dataset.py; hf: download the parquet into $DIR)
+  Once present, re-run, or set SEARCHBENCH_SKIP_DOWNLOAD=yes.
+EOF
+            exit 1
+        fi
+        ;;
+    *)
+        echo "unknown format '$fmt' for $KEY" >&2; exit 1 ;;
+esac
+
+echo
+ls -lh "$DIR" 2>/dev/null | head -20 || true

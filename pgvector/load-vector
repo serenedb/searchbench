@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# pgvector: create the vector extension + table, COPY base vectors, build one
+# HNSW (or IVFFlat) index config; print build-metrics JSON on stdout (logs->stderr).
+# Called once per build config by the driver via VECTOR_INGEST_ARGS.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${SEARCHBENCH_DATA_DIR:?}"; : "${SEARCHBENCH_VECTOR_DATASET:?}"; : "${PGPORT:?}"
+: "${VECTOR_K:=10}"
+LIB_DIR="$(cd ../lib && pwd)"
+
+extra=(); [[ -n "${VECTOR_NB:-}" ]] && extra+=(--nb "$VECTOR_NB")
+[[ -n "${VECTOR_NQ:-}" ]] && extra+=(--nq "$VECTOR_NQ")
+
+# VECTOR_INGEST_ARGS is intentionally word-split into flags (no spaces in values).
+exec "${SEARCHBENCH_PYTHON:-python3}" "${LIB_DIR}/vector_ingest.py" \
+    --engine pgvector --dataset "$SEARCHBENCH_VECTOR_DATASET" \
+    --data-dir "$SEARCHBENCH_DATA_DIR" --port "$PGPORT" \
+    --k "$VECTOR_K" --table vec --index vec_idx \
+    "${extra[@]}" ${VECTOR_INGEST_ARGS:-}
