@@ -14,6 +14,17 @@ The data is a generated OpenTelemetry logs corpus that scales up to about a bill
 - **Filtered analytics**: search and aggregation combined in one query: narrow down first, then crunch what's left, the pattern most real dashboards actually run.
 - **Joins**: correlating across log streams, the part that separates a search index from a real query engine.
 
+## Dataset naming
+ 
+Datasets follow the pattern `otel_logs_<scale>`, where the scale is the row count in shorthand:
+ 
+- **otel_logs_1m** — 1 million rows
+- **otel_logs_100m** — 100 million rows
+- **otel_logs_1b** — 1 billion rows
+
+The prefix (`otel_logs`) names the corpus; the suffix names the size. Smaller scales exist so you can validate an adapter and get a feel for a system before committing to the full billion-row run, which can take hours and a lot of disk.
+Results are tracked per scale, so an engine can have numbers at one size without having run them all.
+
 ## Goals
 
 - **Same result every time**: Run it yourself and get the numbers we got. Every system hooks into the harness the same way, and the driver handles the rest: load, index, query and save.
