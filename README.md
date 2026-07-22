@@ -1,41 +1,31 @@
-# SearchBench
+# SearchBench: An open benchmarks for search and analytics
 
-A benchmark for full-text search engines on log-shaped data.
+https://serenedb.com/searchbench
 
-The workload is 92 queries (Q01–Q92): Q01–Q83 cover search and
-aggregation, Q84–Q92 cover joins. Queries derived from
-[TextBench](https://github.com/ClickHouse/TextBench) (Apache-2.0) let rows
-compare against TextBench's leaderboard, and the added BM25-scored top-K
-queries cover a regime TextBench skips.
+## Overview 
 
-The runner shape follows
-[ClickBench](https://github.com/ClickHouse/ClickBench): each engine
-implements `./install`, `./start`, `./stop`, `./check`, `./load`,
-`./query`, `./data-size`; the shared `lib/benchmark.sh` orchestrates.
+This benchmark measures how well different systems handle search and analytics over high-volume of semi-structured records that applications and infrastructure spit out constantly. Think OpenTelemetry logs, structured events and machine-generated telemetry. The core of it is the two things observability and log-analytics tools do all day and have to do well at the same time: find the rows that matter (keyword and phrase search, filtering, relevance ranking) and make sense of them in bulk (aggregations, grouping, joins across log streams). A system that's fast at one but slow at the other doesn't get you very far, so the benchmark leans on both.
 
-## Run
+The data is a generated OpenTelemetry logs corpus that scales up to about a billion rows. The workload is 92 queries (Q01–Q92), spanning the full range of what a log platform gets asked to do:
 
-```bash
-cd <engine>
-# --index downloads the corpus, loads it, builds the index, then queries.
-SEARCHBENCH_DATA_DIR=/path/to/data ./benchmark.sh --index
-# -> results/<engine>_otel_logs_1b.json
+- **Term and phrase search**: finding the rows that contain a word, a phrase or a combination of conditions, the bread-and-butter "where is this in my logs" case.
+- **Relevance ranking**: BM25-scored top-K queries that return the best matches rather than just any matches, a regime a lot of search benchmarks skip entirely.
+- **Aggregations**: counting, grouping and summarizing over the rows that match, which is where the analytics side gets stressed.
+- **Filtered analytics**: search and aggregation combined in one query: narrow down first, then crunch what's left, the pattern most real dashboards actually run.
+- **Joins**: correlating across log streams, the part that separates a search index from a real query engine.
 
-# Omit --index to re-run queries only against the already-loaded engine.
-SEARCHBENCH_DATA_DIR=/path/to/data ./benchmark.sh
-```
+## Goals
 
-`SEARCHBENCH_DATA_DIR` (required, no default) is a **root** directory for
-corpus data. Each scale gets its own subdirectory under it
-(`.../<dataset>/part_*.parquet`), so a smoke slice never clobbers a full
-part and scales never share files. The shared download step
-(`lib/download-otel-logs`) is the one place that materializes parquet on
-disk; every engine's `./load` then reads `part_*.parquet` from there.
-Each engine's `README.md` lists its other required env vars.
+- **Same result every time**: Run it yourself and get the numbers we got. Every system hooks into the harness the same way, and the driver handles the rest: load, index, query and save.
+- **Bring your own query language**: Nothing here assumes SQL. Systems plug in through a thin adapter, so a SQL database and a DSL-based engine fit side by side without either bending to the other.
+- **Search and analytics together**: The workload doesn't treat them as separate problems. It's built for systems that have to find the right rows and crunch them in the same breath, which is where most real log work lives.
+- **Honest measurement**: Cold and hot runs, caches dropped between queries and load time and index size reported on their own, so nothing hides behind a warm page cache or a slow ingest.
 
-## Adding an engine
+## How to contribute
+ 
+### Add an engine
 
-Create `<engine>/` with an executable script per verb the driver calls, plus a
+This is the most useful contribution. Create `<engine>/` with an executable script per verb the driver calls, plus a
 `benchmark.sh` that sets the engine identity and hands off to the shared driver:
 
 ```bash
@@ -61,6 +51,38 @@ Required scripts (run from the engine dir; non-zero exit = failure):
 Optional: `version` (prints the engine version, recorded in results) and
 `watch-load` (live load progress). Easiest start: copy an existing adapter
 (e.g. `postgres/`) and adapt it.
+ 
+### Start from a working adapter
+
+Don't build from scratch. Copy an existing folder — `postgres/` is the simplest — and adapt it. Point `SEARCHBENCH_DATA_DIR` at a data directory, run it in smoke mode against a small slice to check the plumbing, then do a full run once it's green.
+ 
+### Improve what's there
+
+New adapters aren't the only thing that helps. Fix a bug, correct an unfair query translation or flag a result that looks off. If you know a system better than we do, we'd rather hear it — the benchmark is only as good as the care that goes into each setup.
+ 
+### Open an issue or PR
+
+Corrections are as welcome as additions. Bring the change or bring the problem; either moves things forward.
+
+## Run
+
+```bash
+cd <engine>
+# --index downloads the corpus, loads it, builds the index, then queries.
+SEARCHBENCH_DATA_DIR=/path/to/data ./benchmark.sh --index
+# -> results/<engine>_otel_logs_1b.json
+
+# Omit --index to re-run queries only against the already-loaded engine.
+SEARCHBENCH_DATA_DIR=/path/to/data ./benchmark.sh
+```
+
+`SEARCHBENCH_DATA_DIR` (required, no default) is a **root** directory for
+corpus data. Each scale gets its own subdirectory under it
+(`.../<dataset>/part_*.parquet`), so a smoke slice never clobbers a full
+part and scales never share files. The shared download step
+(`lib/download-otel-logs`) is the one place that materializes parquet on
+disk; every engine's `./load` then reads `part_*.parquet` from there.
+Each engine's `README.md` lists its other required env vars.
 
 ## Smoke mode
 
@@ -91,5 +113,4 @@ real run.
 
 ## License
 
-Apache-2.0. OTel-logs corpus + TextBench-derived queries (Apache-2.0);
-per-engine adapter contract patterned after ClickBench. See [NOTICE](NOTICE).
+Apache-2.0. See [NOTICE](NOTICE).
