@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${SEARCHBENCH_PROGRESS_INTERVAL:=10}"
+: "${ARANGOIMPORT_THREADS:=4}"
+
+log() { printf '%s\n' "$*" >&2; }
+
+# POST a create request; tolerate a duplicate-name error (idempotent re-create)
+# but fail on anything else.
+arango_post() {
+    local path="$1" data="$2" resp
+    resp=$(curl -sS -X POST "${ARANGO_API}${path}" -d "$data" 2>&1) || {
+        echo "POST ${path} failed: $resp" >&2; exit 1; }
+    if [[ "$(printf '%s' "$resp" | jq -r '.error // false' 2>/dev/null)" == "true" ]]; then
+        local code msg
+        code=$(printf '%s' "$resp" | jq -r '.errorNum // 0' 2>/dev/null)
+        msg=$(printf '%s' "$resp"  | jq -r '.errorMessage // "unknown"' 2>/dev/null)
+        if [[ "$code" == "1207" ]]; then       # ERROR_ARANGO_DUPLICATE_NAME
+            echo "  (already exists, ignoring: $msg)" >&2
+        else
+            echo "POST ${path} error [$code]: $msg" >&2; exit 1
+        fi
+    fi
+}
+
+
+read -r -d '' SELECT_COLS <<'SQL' || true
+  epoch_ms(timestamp::TIMESTAMP_NS)  AS "Timestamp",
+  traceid                         AS "TraceId",
+  spanid                          AS "SpanId",
+  traceflags                      AS "TraceFlags",
+  severitytext                    AS "SeverityText",
+  severitynumber                  AS "SeverityNumber",
+  servicename                     AS "ServiceName",
+  body                            AS "Body",
+  resourceschemaurl               AS "ResourceSchemaUrl",
+  to_json(resourceattributes)     AS "ResourceAttributes",
+  scopeschemaurl                  AS "ScopeSchemaUrl",
+  scopename                       AS "ScopeName",
+  scopeversion                    AS "ScopeVersion",
+  to_json(scopeattributes)        AS "ScopeAttributes",
+  to_json(logattributes)          AS "LogAttributes"
+SQL
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob
+parquet=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#parquet[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+# Stream parquet -> NDJSON without materializing the whole result. Two things
+# matter for memory at 100M rows:
+#   * preserve_insertion_order=false -- with the default (true) a parallel
+#     read_parquet must BUFFER results to reassemble input row order, which grows
+#     unbounded on a big scan (~50 GB+ -> OOM). Ingestion order is irrelevant, so
+#     turn it off: RSS then stays flat (~4 GB) and rows stream out as scanned.
+#   * COPY (...) TO '/dev/stdout' (FORMAT json) -- emits newline-delimited JSON
+#     incrementally as the pipeline produces chunks, rather than collecting the
+#     full result set the way a plain `-jsonlines -c "SELECT ..."` does.
+convert_sql="SET preserve_insertion_order=false; COPY (SELECT ${SELECT_COLS} FROM read_parquet('${SEARCHBENCH_DATA_DIR}/part_*.parquet')) TO '/dev/stdout' (FORMAT json);"
+log "loading ${#parquet[@]} parquet file(s) from ${SEARCHBENCH_DATA_DIR}"
+
+# 1. analyzer
+log "==> create analyzer ${ARANGO_ANALYZER} (segmentation: break=alpha, case=lower)"
+arango_post /analyzer "$(jq -nc --arg n "$ARANGO_ANALYZER" \
+    '{name:$n,type:"segmentation",properties:{break:"alpha",case:"lower"},features:["frequency","norm","position"]}')"
+
+# 2. collection
+log "==> create collection ${ARANGO_COLLECTION}"
+arango_post /collection "$(jq -nc --arg n "$ARANGO_COLLECTION" '{name:$n}')"
+
+# 3. convert + import. The serened container reads parquet via DuckDB and streams
+#    NDJSON; arangoimport runs inside the arango container, reading it over
+#    `docker exec -i` stdin and talking to arangod on localhost:$ARANGO_PORT.
+arango_import() {
+    docker exec -i "$ARANGO_CONTAINER" arangoimport \
+        --server.endpoint "tcp://127.0.0.1:${ARANGO_PORT}" \
+        --server.database "$ARANGO_DB" \
+        --server.authentication false \
+        --type jsonl --collection "$ARANGO_COLLECTION" \
+        --file - --progress true --threads "$ARANGOIMPORT_THREADS"
+}
+
+log "==> import documents (serened COPY->NDJSON | arangoimport)"
+# arangoimport reading a stream shows no doc counter, so tee the NDJSON through
+# a pass-through line counter that logs "[ingest] N docs" to stderr every
+# $SEARCHBENCH_PROGRESS_DOCS rows (default 1,000,000) plus a final total.
+serened_shell "$convert_sql" \
+    | awk -v every="${SEARCHBENCH_PROGRESS_DOCS:-1000000}" '
+        { print }
+        every > 0 && NR % every == 0 { printf "[ingest] %d docs\n", NR > "/dev/stderr"; fflush("/dev/stderr") }
+        END { printf "[ingest] done, %d docs\n", NR > "/dev/stderr" }' \
+    | arango_import
+
+# 4. view (created AFTER import so the link indexes the existing documents).
+log "==> create view ${ARANGO_VIEW}"
+arango_post /view "$(jq -nc \
+    --arg view "$ARANGO_VIEW" --arg coll "$ARANGO_COLLECTION" --arg ana "$ARANGO_ANALYZER" \
+    '{
+       name: $view, type: "arangosearch",
+       links: { ($coll): {
+         includeAllFields: false,
+         fields: {
+           Body:           { analyzers: [$ana] },
+           ServiceName:    { analyzers: ["identity"] },
+           TraceId:        { analyzers: ["identity"] },
+           SeverityNumber: {},
+           Timestamp:      {}
+         }
+       }},
+       storedValues: [ { fields: ["Timestamp","ServiceName","SeverityText","ScopeName","TraceId","Body"] } ],
+       optimizeTopK: ["BM25(@doc, 1.2, 0.75) DESC"],
+       commitIntervalMsec: 1000,
+       consolidationIntervalMsec: 10000
+     }')"
+
+# Persistent index on the base collection for the join queries' b-side probe
+# (FOR b IN otel_logs FILTER b.TraceId == a.TraceId AND b.ServiceName == ...):
+# without it each of the many a-side rows would trigger a full collection scan.
+log "==> create persistent index on ${ARANGO_COLLECTION} (TraceId, ServiceName)"
+arango_post "/index?collection=${ARANGO_COLLECTION}" \
+    "$(jq -nc '{type:"persistent",fields:["TraceId","ServiceName"],unique:false,sparse:false}')"
+
+# 5. wait for the link to finish indexing.
+total=$(arango_collection_count)
+[[ "$total" -gt 0 ]] || { echo "collection ${ARANGO_COLLECTION} is empty after import" >&2; exit 1; }
+log "==> waiting for ArangoDB link to index ${total} docs"
+
+# The link is indexed asynchronously, so we must poll the view count to
+# tell when it's done. To keep load_time honest we decouple the poll
+# cadence from the exit latency: wake every $POLL_TICK seconds (0.05s
+# default) so we react to indexed==total within ~50ms, but only print a
+# progress line every $SEARCHBENCH_PROGRESS_INTERVAL seconds.
+POLL_TICK="${SEARCHBENCH_POLL_TICK:-0.05}"
+prev=0; stable=0; last_print=$(date +%s); start=$(date +%s)
+while :; do
+    sleep "$POLL_TICK"
+    indexed=$(arango_view_count)
+    if [[ "$indexed" -ge "$total" ]]; then
+        # Two consecutive at-or-above reads guard against a transient dip
+        # while a consolidation segment swaps in.
+        stable=$((stable + 1))
+        [[ "$stable" -ge 2 ]] && break
+    else
+        stable=0
+    fi
+    now=$(date +%s)
+    if (( now - last_print >= SEARCHBENCH_PROGRESS_INTERVAL )); then
+        delta=$((now - last_print)); last_print=$now
+        rate=$(( (indexed - prev) / (delta > 0 ? delta : 1) ))
+        printf '[+%ds] indexed %s / %s docs (+%s/s)\n' \
+            "$((now - start))" "$indexed" "$total" "$rate" >&2
+        prev=$indexed
+    fi
+done
+log "indexing complete: ${total} docs"

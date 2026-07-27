@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Print the running ArangoDB version (or `unknown`). Consumed by the shared
+# driver's get_version().
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
+curl -fsS "${ARANGO_BASE}/_api/version" 2>/dev/null | jq -r '.version // "unknown"' || echo unknown

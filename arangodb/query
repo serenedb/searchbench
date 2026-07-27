@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Run one AQL query (read from stdin) against arangod.
+#
+# Contract (per the SearchBench engine adapter):
+#   stdout: query result rows (one compact-JSON row per line, no decoration)
+#   stderr: last line is the fractional elapsed-seconds reported by the server
+#           (cursor extra.stats.executionTime), the analog of psql's \timing.
+#   exit 0 on success, non-zero on any error.
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
+
+query=$(cat)
+
+# POST the AQL to the cursor endpoint. -sS (not -f) so an HTTP 4xx still hands
+# us ArangoDB's JSON error body instead of an opaque curl failure; genuine
+# network errors still make curl exit non-zero and trip the `||` below.
+body=$(jq -nc --arg q "$query" '{query:$q,batchSize:1000}' \
+    | curl -sS -X POST "${ARANGO_API}/cursor" -d @- 2>&1) || {
+    rc=$?
+    printf '%s\n' "$body" >&2
+    exit "$rc"
+}
+
+# ArangoDB signals query failures with {"error":true,"errorMessage":...}.
+if [[ "$(printf '%s' "$body" | jq -r '.error // false')" == "true" ]]; then
+    printf '%s' "$body" | jq -r '.errorMessage // "AQL error"' >&2
+    exit 1
+fi
+
+# Result rows on stdout.
+printf '%s' "$body" | jq -c '.result[]?'
+
+# Server-side execution time (seconds) -> last line of stderr.
+t=$(printf '%s' "$body" | jq -r '.extra.stats.executionTime // empty')
+if [[ -z "$t" ]]; then
+    echo "no executionTime in cursor response" >&2
+    exit 1
+fi
+printf '%.3f\n' "$t" >&2

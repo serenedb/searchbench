@@ -35,7 +35,7 @@ export PARADE_IMAGE PARADE_CONTAINER PARADE_DATA_DIR
 # ParadeDB can't read parquet; a throwaway serened container reads it (embeds
 # DuckDB) and streams rows over the PG wire via its postgres connector. Corpus is
 # identity-mounted; --network host reaches this adapter's PG on $PGPORT.
-: "${SERENED_IMAGE:=serenedb/serenedb:26.07.1}"
+: "${SERENED_IMAGE:=serenedb/serenedb:26.07.2}"
 export SERENED_IMAGE
 serened_shell() {
     docker run --rm --network host \

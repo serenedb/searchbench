@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# On-disk bytes of ArangoDB's data dir (documents + indexes + the view). Flush
+# the WAL first (synchronous) so the measurement reflects settled state, not the
+# recycled-WAL bloat right after a bulk import. rocksdb keeps all collections/
+# views in shared SSTs, so this is the whole data dir (the _system baseline is a
+# few MB, negligible at scale).
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
+
+curl -fsS -X PUT "${ARANGO_BASE}/_admin/wal/flush?waitForSync=true&waitForCollector=true" \
+    >/dev/null 2>&1 || true
+
+# BusyBox du in the image: -sk (KiB) -> bytes.
+kib=$(docker exec "$ARANGO_CONTAINER" du -sk "$ARANGO_CONTAINER_DATA_DIR" 2>/dev/null \
+      | awk 'NR==1{print $1}') || true
+echo $(( ${kib:-0} * 1024 ))

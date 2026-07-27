@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Readiness probe: exit 0 iff arangod is fully up. /_api/version alone answers
+# during first-run init while the storage engine is still starting, so also
+# require a real DB-engine op (list collections on the target DB) -- that only
+# succeeds once arangod can actually serve data.
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
+curl -fsS "${ARANGO_BASE}/_api/version" >/dev/null 2>&1 \
+    && curl -fsS "${ARANGO_API}/collection" >/dev/null 2>&1

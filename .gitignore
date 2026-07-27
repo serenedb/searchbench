@@ -19,5 +19,7 @@ parade/paradedb_data
 
 postgres/postgres_data
 
+arangodb/arango_data
+
 **/__pycache__/
 .venv

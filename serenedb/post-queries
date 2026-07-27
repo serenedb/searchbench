@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Called by lib/benchmark.sh right after the query phase, engine still running.
+# Dumps server metrics (with headers, aligned) for post-run inspection.
+set -e
+
+: "${PGHOST:=127.0.0.1}"
+: "${PGPORT:=5499}"
+: "${PGUSER:=postgres}"
+: "${PGDATABASE:=postgres}"
+
+psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" \
+    -c 'select * from sdb_metrics;' > sdb_metrics.txt

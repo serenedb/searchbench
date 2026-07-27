@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Start the ArangoDB container. Idempotent: if arangod already answers on
+# $ARANGO_PORT we return without spawning a duplicate. The driver's cold cycle
+# (stop -> drop_caches -> start) must preserve loaded data, so we never wipe here
+# -- teardown for a clean reload lives in ./install.
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
+
+wait_ready() {
+    local ok=0 i
+    for i in $(seq 1 180); do
+        if curl -fsS "${ARANGO_BASE}/_api/version" >/dev/null 2>&1 \
+           && curl -fsS "${ARANGO_API}/collection" >/dev/null 2>&1; then
+            ok=$((ok + 1))
+            [[ $ok -ge 2 ]] && return 0
+        else
+            ok=0
+        fi
+        sleep 1
+    done
+    echo "arango: server not ready on ${ARANGO_BASE} within timeout" >&2
+    return 1
+}
+
+# Already serving (fully)? Nothing to do.
+if curl -fsS "${ARANGO_BASE}/_api/version" >/dev/null 2>&1 \
+   && curl -fsS "${ARANGO_API}/collection" >/dev/null 2>&1; then
+    exit 0
+fi
+
+if docker ps -a --format '{{.Names}}' | grep -qx "$ARANGO_CONTAINER"; then
+    net=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$ARANGO_CONTAINER" 2>/dev/null || echo "")
+    if [[ "$net" == "host" ]]; then
+        docker start "$ARANGO_CONTAINER" >/dev/null
+        wait_ready
+        exit 0
+    fi
+    echo "arango: existing container network '${net}' != host; recreating with --network host" >&2
+    docker rm -f "$ARANGO_CONTAINER" >/dev/null 2>&1 || true
+fi
+
+mkdir -p "$ARANGO_DATA_DIR"
+chmod 777 "$ARANGO_DATA_DIR"
+docker run -d \
+    --name "$ARANGO_CONTAINER" \
+    --network host \
+    -e ARANGO_NO_AUTH=1 \
+    -v "${ARANGO_DATA_DIR}:${ARANGO_CONTAINER_DATA_DIR}" \
+    "$ARANGO_IMAGE" arangod --server.endpoint "tcp://0.0.0.0:${ARANGO_PORT}" >/dev/null
+wait_ready

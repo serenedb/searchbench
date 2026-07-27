@@ -465,6 +465,14 @@ main() {
         write_json "$partial"    # flush after each query (crash-safe)
     done < "$SEARCHBENCH_QUERIES"
 
+    # Optional adapter hook: runs once after all queries while the engine is
+    # still up (a restart would reset in-memory stats). SereneDB uses it to
+    # dump `select * from sdb_metrics` into sdb_metrics.txt.
+    if [[ -x ./post-queries ]]; then
+        log "==> post-queries"
+        ./post-queries || warn "post-queries failed (ignored)"
+    fi
+
     log "==> stop"
     ./stop >/dev/null 2>&1 || true
 

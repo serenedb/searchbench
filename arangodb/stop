@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Stop the ArangoDB container (idempotent). Kept, not removed, so the driver's
+# cold cycle (stop -> drop_caches -> start) restarts the same instance with data
+# intact; teardown for a clean reload lives in ./install.
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
+
+docker stop "$ARANGO_CONTAINER" >/dev/null 2>&1 || true

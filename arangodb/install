@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# One-time setup for the ArangoDB adapter (docker). Runs before every benchmark;
+# wipes container + datadir so ./load rebuilds the collection + view from scratch
+# (a leftover would give a bogus instant load_time). ./load converts
+# parquet->NDJSON via a throwaway serened container.
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
+
+command -v jq     >/dev/null || { echo "jq not found on PATH"     >&2; exit 1; }
+command -v curl   >/dev/null || { echo "curl not found on PATH"   >&2; exit 1; }
+command -v docker >/dev/null || { echo "docker not found on PATH" >&2; exit 1; }
+docker info >/dev/null 2>&1  || { echo "docker daemon not reachable" >&2; exit 1; }
+
+# Force-remove the container so ./start spawns fresh and ./load rebuilds from
+# scratch -- the only way load_time reflects real work.
+docker rm -f "$ARANGO_CONTAINER" >/dev/null 2>&1 || true
+# Wipe the host bind-mount data dir (arangod owns it as its own uid, so a host
+# rm may hit EPERM) via a throwaway root container.
+if [[ -d "$ARANGO_DATA_DIR" ]]; then
+    docker run --rm -v "${ARANGO_DATA_DIR}:/data" --entrypoint sh alpine \
+        -c 'rm -rf /data/..?* /data/.[!.]* /data/* 2>/dev/null' >/dev/null 2>&1 || true
+fi
