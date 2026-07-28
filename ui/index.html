@@ -239,7 +239,7 @@ function fmtSec(s) {
 }
 function fmtBytes(b) {
   if (typeof b !== "number" || b <= 0) return "—";
-  const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0, v = b;
+  const u = ["B", "KiB", "MiB", "GiB", "TiB"]; let i = 0, v = b;
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
   return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " " + u[i];
 }
