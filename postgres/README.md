@@ -25,13 +25,13 @@ SEARCHBENCH_DATA_DIR=/path/to/data ./benchmark.sh --index
 queries only.
 
 Prerequisites: `docker`, `psql`, `jq`. `./load` reads parquet via a `serened`
-container (`SERENED_IMAGE`, default `serenedb/serenedb:26.07.2`).
+container (`SERENED_IMAGE`, default `serenedb/serenedb:26.07.5`).
 
 ## Env
 
 | Var | Default | Meaning |
 |---|---|---|
-| `SERENED_IMAGE` | `serenedb/serenedb:26.07.2` | serened image used as parquet reader |
+| `SERENED_IMAGE` | `serenedb/serenedb:26.07.5` | serened image used as parquet reader |
 | `SEARCHBENCH_DATA_DIR` | — | root data directory (required, no default) |
 | `PGPORT` | `5457` | host port (avoids 5455/SereneDB + 5456/Parade) |
 | `PG_IMAGE` | `postgres:16-alpine` | image |

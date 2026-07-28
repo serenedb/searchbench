@@ -27,7 +27,7 @@ unaffected by `SEARCHBENCH_PROGRESS_INTERVAL`.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `SERENED_IMAGE` | `serenedb/serenedb:26.07.2` | serened image (parquet→NDJSON reader) |
+| `SERENED_IMAGE` | `serenedb/serenedb:26.07.5` | serened image (parquet→NDJSON reader) |
 | `ARANGO_PORT` | `8529` | listen port |
 | `ARANGO_IMAGE` | `arangodb/enterprise:3.12` | image |
 | `ARANGO_CONTAINER` | `searchbench-arango` | container |

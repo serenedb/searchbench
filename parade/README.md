@@ -27,7 +27,7 @@ second terminal.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `SERENED_IMAGE` | `serenedb/serenedb:26.07.2` | serened image used as parquet reader |
+| `SERENED_IMAGE` | `serenedb/serenedb:26.07.5` | serened image used as parquet reader |
 | `PGPORT` | `5456` | host port (5455 is SereneDB's) |
 | `PARADE_IMAGE` | `paradedb/paradedb:0.24.1` | image tag (pinned; provides the `simple` tokenizer / `pdb.simple` cast used by `create_index.sql`) |
 | `PARADE_CONTAINER` | `searchbench-paradedb` | container name |

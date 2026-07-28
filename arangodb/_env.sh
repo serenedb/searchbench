@@ -24,7 +24,7 @@
 # --- serened parquet reader (docker) ------------------------------------------
 # ArangoDB can't read parquet; a throwaway serened container reads it (embeds
 # DuckDB) and emits NDJSON on stdout for arangoimport. Corpus identity-mounted.
-: "${SERENED_IMAGE:=serenedb/serenedb:26.07.2}"
+: "${SERENED_IMAGE:=serenedb/serenedb:26.07.5}"
 serened_shell() {
     docker run --rm --network host \
         -v "${SEARCHBENCH_DATA_DIR}:${SEARCHBENCH_DATA_DIR}:ro" \
