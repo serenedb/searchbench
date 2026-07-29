@@ -84,6 +84,7 @@
   .seg { display:flex; background:var(--inset); border:.5px solid var(--line); padding:2px; gap:2px; }
   .seg button { border:0; cursor:pointer; font-weight:700; background:transparent; color:var(--mut); line-height:1.3; }
   .seg button.on { background:var(--accent); color:#fff; }
+  .seg button:disabled { cursor:not-allowed; opacity:.35; color:var(--mut); }
 
   /* ---- chips ---- */
   .chip { border:.5px solid var(--line); background:transparent; color:var(--mut); padding:3px 8px; font-size:10.5px; font-weight:700; cursor:pointer; }
@@ -292,6 +293,12 @@ function curDataset() {
   if (state.dataset) return state.dataset;
   return datasets[0] || null;
 }
+function coldRunAvailable(ds) {
+  return (datasetItems(ds) ?? 0) < 1e9;
+}
+function normalizeMetricForDataset(ds = curDataset()) {
+  if (!coldRunAvailable(ds)) state.metric = "hot";
+}
 function tagsOf(row) {
   const name = (row.system || "").toLowerCase();
   return (row.tags || []).filter(t => String(t).toLowerCase() !== name);
@@ -453,7 +460,7 @@ function panel(inner, { grow = false, style = "", fillBody = false } = {}) {
 // segmented control. opts: [{label, v}]. `key` is the data-act name.
 function seg(key, opts, cur, { flex = false, pad = "4px 8px", fs = "11px" } = {}) {
   return `<div class="seg" style="flex:1">` + opts.map(o =>
-    `<button class="${o.v === cur ? "on" : ""}" data-act="${key}" data-v="${esc(o.v)}" style="${flex ? "flex:1;" : ""}padding:${pad};font-size:${fs}">${esc(o.label)}</button>`
+    `<button class="${o.v === cur ? "on" : ""}" data-act="${key}" data-v="${esc(o.v)}"${o.disabled ? ' disabled aria-disabled="true"' : ""}${o.title ? ` title="${esc(o.title)}"` : ""} style="${flex ? "flex:1;" : ""}padding:${pad};font-size:${fs}">${esc(o.label)}</button>`
   ).join("") + `</div>`;
 }
 function segRow(label, key, opts, cur, opt) {
@@ -485,11 +492,12 @@ function renderHeader() {
 // ---- sidebar ---------------------------------------------------------------
 function renderSidebar(ds) {
   const isTable = state.tab === "table", isCharts = state.tab === "charts";
+  const coldDisabled = !coldRunAvailable(ds);
 
   // config panel
   let cfg = `<div style="padding:9px;display:flex;flex-direction:column;gap:9px">`;
   cfg += segRow("view", "tab", [{ label: "Table", v: "table" }, { label: "Charts", v: "charts" }], state.tab, { flex: true });
-  cfg += segRow("run", "metric", [{ label: "Cold", v: "cold" }, { label: "Hot", v: "hot" }], state.metric, { flex: true });
+  cfg += segRow("run", "metric", [{ label: "Cold", v: "cold", disabled: coldDisabled, title: coldDisabled ? "Cold runs are disabled for 1B datasets" : "" }, { label: "Hot", v: "hot" }], state.metric, { flex: true });
   if (isTable) cfg += segRow("cells", "cells", [{ label: "Relative", v: "relative" }, { label: "Seconds", v: "sec" }, { label: "Millis", v: "ms" }], state.valueMode, { flex: true, pad: "4px 2px", fs: "10.5px" });
   if (isCharts) cfg += segRow("scale", "scale", [{ label: "Log", v: "log" }, { label: "Linear", v: "linear" }], state.scale, { flex: true });
   cfg += `</div>`;
@@ -830,6 +838,7 @@ function renderExplain(qp) {
 // ---------------------------------------------------------------------------
 function render() {
   const app = document.getElementById("app");
+  normalizeMetricForDataset();
   syncUrlState();
   // preserve scroll positions across the full innerHTML swap
   const savedT = app.querySelector("#tscroll");
@@ -889,10 +898,14 @@ function wire() {
     switch (act) {
       case "theme": applyTheme(el.getAttribute("data-v")); render(); break;
       case "tab": state.tab = el.getAttribute("data-v"); render(); break;
-      case "metric": state.metric = el.getAttribute("data-v"); render(); break;
+      case "metric": {
+        const metric = el.getAttribute("data-v");
+        if (metric === "cold" && !coldRunAvailable(curDataset())) break;
+        state.metric = metric; render(); break;
+      }
       case "cells": state.valueMode = el.getAttribute("data-v"); render(); break;
       case "scale": state.scale = el.getAttribute("data-v"); render(); break;
-      case "dataset": state.dataset = el.getAttribute("data-name"); state.sel = null; state.explainOpen = false; render(); break;
+      case "dataset": state.dataset = el.getAttribute("data-name"); normalizeMetricForDataset(state.dataset); state.sel = null; state.explainOpen = false; render(); break;
       case "qtask": { const t = el.getAttribute("data-task"); state.activeQTasks.has(t) ? state.activeQTasks.delete(t) : state.activeQTasks.add(t); render(); break; }
       case "clear-qtasks": state.activeQTasks.clear(); render(); break;
       case "part": {
