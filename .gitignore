@@ -8,6 +8,7 @@
 
 serenedb/serened_data/
 serenedb/serened.pid
+serenedb/serenedb_metrics.txt
 
 elastic/es-data/
 elastic/es-smoke/
