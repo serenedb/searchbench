@@ -167,9 +167,66 @@ const state = {
   sortRow: "geomean", sortDir: 1,
   hidden: new Set(), activeTags: new Set(), activeQTasks: new Set(),
   manualOrder: null, sortByEngine: null, sortByEngineDir: 1,
-  sel: null, theme: "dark", max: false, explainOpen: false,
+  sel: null, theme: "dark", max: false, explainOpen: false, hiddenPanels: new Set(),
 };
 let dragSys = null, lastOver = null;
+const HIDEABLE_PANELS = new Set(["header", "dataset", "config", "categories", "participants", "query", "expand"]);
+function isPanelHidden(id) { return state.hiddenPanels.has(id); }
+
+// Keep benchmark views shareable: every sidebar control and the expanded
+// main-view state is represented in the URL, without requiring a backend.
+function csv(values) { return [...values].filter(Boolean).sort().join(","); }
+function syncUrlState() {
+  try {
+    const p = new URLSearchParams();
+    const put = (key, value) => { if (value != null && value !== "") p.set(key, value); };
+    put("dataset", curDataset());
+    put("view", state.tab);
+    put("run", state.metric);
+    put("cells", state.valueMode);
+    put("scale", state.scale);
+    put("categories", csv(state.activeQTasks));
+    put("hidden", csv(state.hidden));
+    put("sort", state.sortRow);
+    put("sortDir", state.sortDir);
+    put("sortEngine", state.sortByEngine);
+    put("sortEngineDir", state.sortByEngineDir);
+    put("order", (state.manualOrder || []).join(","));
+    put("theme", state.theme);
+    put("expanded", state.max ? "1" : "0");
+    put("hide", csv(state.hiddenPanels));
+    const query = p.toString();
+    const next = window.location.pathname + (query ? "?" + query : "") + window.location.hash;
+    window.history.replaceState(null, "", next);
+  } catch (_) {}
+}
+function restoreUrlState() {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    const oneOf = (key, allowed, fallback) => allowed.includes(p.get(key)) ? p.get(key) : fallback;
+    const validSystems = new Set(DATA.map(r => r.system));
+    const split = key => (p.get(key) || "").split(",").filter(Boolean);
+    const dataset = p.get("dataset");
+    if (datasets.includes(dataset)) state.dataset = dataset;
+    state.tab = oneOf("view", ["table", "charts"], state.tab);
+    state.metric = oneOf("run", ["cold", "hot"], state.metric);
+    state.valueMode = oneOf("cells", ["relative", "sec", "ms"], state.valueMode);
+    state.scale = oneOf("scale", ["log", "linear"], state.scale);
+    state.activeQTasks = new Set(split("categories").filter(t => qTasksFor().includes(t)));
+    state.hidden = new Set(split("hidden").filter(s => validSystems.has(s)));
+    state.sortRow = p.get("sort") || state.sortRow;
+    state.sortDir = p.get("sortDir") === "-1" ? -1 : 1;
+    const engine = p.get("sortEngine");
+    state.sortByEngine = validSystems.has(engine) ? engine : null;
+    state.sortByEngineDir = p.get("sortEngineDir") === "-1" ? -1 : 1;
+    const order = split("order").filter(s => validSystems.has(s));
+    state.manualOrder = order.length ? order : null;
+    state.max = p.get("expanded") === "1";
+    state.hiddenPanels = new Set(split("hide").filter(id => HIDEABLE_PANELS.has(id)));
+    const theme = oneOf("theme", ["dark", "light"], null);
+    if (theme) state.theme = theme;
+  } catch (_) {}
+}
 
 // ---- data helpers ----------------------------------------------------------
 const datasets = [...new Set(DATA.map(d => d.dataset))].sort((a, b) => {
@@ -177,6 +234,13 @@ const datasets = [...new Set(DATA.map(d => d.dataset))].sort((a, b) => {
   return cb - ca || a.localeCompare(b);
 });
 function rowsFor(ds) { return DATA.filter(d => d.dataset === ds); }
+function datasetItems(ds) {
+  const m = /(?:_|^)(\d+)([kmb])(?:_|$)/i.exec(ds || "");
+  if (!m) return null;
+  const unit = { k: 1e3, m: 1e6, b: 1e9 }[m[2].toLowerCase()];
+  return unit ? +m[1] * unit : null;
+}
+function fmtItems(n) { return Number.isFinite(n) ? new Intl.NumberFormat("en-US").format(n) : "—"; }
 function curDataset() {
   if (state.dataset) return state.dataset;
   const withPlan = DATA.find(d => Array.isArray(d.explain_analyzes) && d.explain_analyzes.some(x => x && String(x).trim()));
@@ -379,19 +443,6 @@ function renderSidebar(ds) {
   // config panel
   let cfg = `<div style="padding:9px;display:flex;flex-direction:column;gap:9px">`;
   cfg += segRow("view", "tab", [{ label: "Table", v: "table" }, { label: "Charts", v: "charts" }], state.tab, { flex: true });
-  // datasets as a button list
-  const dsRows = datasets.map(name => {
-    const on = name === ds;
-    return `<button class="dsrow" data-act="dataset" data-name="${esc(name)}" style="border-color:${on ? "var(--accent)" : "transparent"};background:${on ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent"}">
-      <span style="color:var(--accent);font-weight:700;font-size:10px;width:7px;opacity:${on ? 1 : 0}">&gt;</span>
-      <span style="flex:1;font-size:12px;font-weight:600;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
-      <span style="font-size:10px;color:var(--mut)">${rowsFor(name).length} eng</span>
-    </button>`;
-  }).join("");
-  cfg += `<div style="display:flex;align-items:flex-start;gap:8px">
-      <span style="width:48px;flex-shrink:0;font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);padding-top:6px">dataset</span>
-      <div style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:0">${dsRows}</div>
-    </div>`;
   cfg += segRow("run", "metric", [{ label: "Cold", v: "cold" }, { label: "Hot", v: "hot" }], state.metric, { flex: true });
   if (isTable) cfg += segRow("cells", "cells", [{ label: "Relative", v: "relative" }, { label: "Seconds", v: "sec" }, { label: "Millis", v: "ms" }], state.valueMode, { flex: true, pad: "4px 2px", fs: "10.5px" });
   if (isCharts) cfg += segRow("scale", "scale", [{ label: "Log", v: "log" }, { label: "Linear", v: "linear" }], state.scale, { flex: true });
@@ -400,15 +451,23 @@ function renderSidebar(ds) {
     `<div class="ph"><span class="pr">&gt;</span><span class="pt">config</span><span class="note" style="margin-left:auto">cold = after cache drop</span></div>${cfg}`
   );
 
-  // tags panel
-  const allTags = tagsFor(ds);
-  [...state.activeTags].forEach(t => { if (!allTags.includes(t)) state.activeTags.delete(t); });
-  const tagChips = allTags.map(t =>
-    `<button class="chip${state.activeTags.has(t) ? " on" : ""}" data-act="tag" data-tag="${esc(t)}" title="engine shows if it has any selected tag">${esc(t)}</button>`).join("");
-  const tagsPanel = panel(
-    `<div class="ph"><span class="pr">&gt;</span><span class="pt">tags</span>${state.activeTags.size ? `<button class="link" style="margin-left:auto" data-act="clear-tags">clear</button>` : ""}</div>
-     <div style="padding:8px;display:flex;flex-wrap:wrap;gap:5px">${tagChips || `<span class="note">no tags</span>`}</div>`
-  );
+  // Dataset has a dedicated, high-contrast panel so size is readable at a glance.
+  const dsRows = datasets.map(name => {
+    const on = name === ds;
+    const items = datasetItems(name);
+    return `<button class="dsrow" data-act="dataset" data-name="${esc(name)}" style="border-color:${on ? "var(--accent)" : "transparent"};background:${on ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent"}">
+      <span style="color:var(--accent);font-weight:700;font-size:10px;width:7px;opacity:${on ? 1 : 0}">&gt;</span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;overflow:hidden">
+        <span style="font-size:12px;font-weight:600;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
+        <span style="font:700 10px var(--mono);color:var(--mut);letter-spacing:.03em">${items ? fmtItems(items) + " items" : "dataset"}</span>
+      </span>
+      <span style="font-size:10px;color:var(--mut)">${rowsFor(name).length} eng</span>
+    </button>`;
+  }).join("");
+  const datasetPanel = panel(
+    `<div class="ph"><span class="pr">&gt;</span><span class="pt">dataset</span><span class="note" style="margin-left:auto">items</span></div>
+     <div style="padding:7px;display:flex;flex-direction:column;gap:2px">${dsRows}</div>`
+  ).replace('class="panel"', 'class="panel dataset-panel"');
 
   // categories panel
   const allTasks = qTasksFor();
@@ -424,7 +483,7 @@ function renderSidebar(ds) {
   const order = universeOrder(ds);
   const bySys = Object.fromEntries(rowsFor(ds).map(r => [r.system, r]));
   const present = order.filter(s => bySys[s] && passesTagFilter(bySys[s]));
-  const anyHidden = present.some(s => state.hidden.has(s));
+  const allSelected = present.length > 0 && !present.some(s => state.hidden.has(s));
   const partRows = present.map(s => {
     const off = state.hidden.has(s);
     return `<button class="prow" data-act="part" data-sys="${esc(s)}" title="click to show / hide" style="opacity:${off ? .4 : 1}">
@@ -434,12 +493,18 @@ function renderSidebar(ds) {
     </button>`;
   }).join("");
   const partPanel = panel(
-    `<div class="ph"><span class="pr">&gt;</span><span class="pt">participants</span>${anyHidden ? `<button class="link" style="margin-left:auto" data-act="show-all">show all</button>` : ""}</div>
+    `<div class="ph"><span class="pr">&gt;</span><span class="pt">participants</span>${present.length ? `<button class="link" style="margin-left:auto" data-act="toggle-all">${allSelected ? "unselect all" : "select all"}</button>` : ""}</div>
      <div id="partscroll" style="flex:1;min-height:0;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:1px">${partRows}</div>`,
     { grow: true, style: "flex:1;min-height:0;display:flex" }
   );
 
-  return `<aside style="display:flex;flex-direction:column;gap:11px;min-height:0;min-width:0">${configPanel}${tagsPanel}${catPanel}${partPanel}</aside>`;
+  const panels = [
+    ["dataset", datasetPanel],
+    ["config", configPanel],
+    ["categories", catPanel],
+    ["participants", partPanel],
+  ].filter(([id]) => !isPanelHidden(id)).map(([, html]) => html).join("");
+  return `<aside style="display:flex;flex-direction:column;gap:11px;min-height:0;min-width:0">${panels}</aside>`;
 }
 
 // ---- results table ---------------------------------------------------------
@@ -642,6 +707,7 @@ function renderCharts(ds, engines) {
 }
 
 function maxBtn() {
+  if (isPanelHidden("expand")) return "";
   const on = state.max;
   return `<button data-act="max" title="${on ? "restore filters & query panel" : "maximize — hide filters & query panel"}" style="border:.5px solid var(--line);background:${on ? "var(--accent)" : "var(--inset)"};color:${on ? "#fff" : "var(--mut)"};padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:10px">${on ? "⛶ restore" : "⛶ max"}</button>`;
 }
@@ -718,6 +784,7 @@ function renderExplain(qp) {
 // ---------------------------------------------------------------------------
 function render() {
   const app = document.getElementById("app");
+  syncUrlState();
   // preserve scroll positions across the full innerHTML swap
   const savedT = app.querySelector("#tscroll");
   const st = savedT ? { l: savedT.scrollLeft, t: savedT.scrollTop } : null;
@@ -725,7 +792,7 @@ function render() {
   const sp = savedP ? savedP.scrollTop : null;
 
   const ds = curDataset();
-  let html = renderHeader();
+  let html = isPanelHidden("header") ? "" : renderHeader();
 
   if (!ds) {
     html += `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:13px">No results found. Run an engine benchmark, then <code style="margin:0 5px">./ui/build</code>.</div>`;
@@ -734,11 +801,12 @@ function render() {
   }
 
   const engines = orderedVisible(ds);
-  const bodyCols = state.max ? "1fr" : "300px 1fr";
-  const sidebar = state.max ? "" : renderSidebar(ds);
+  const showSidebar = !state.max && ["dataset", "config", "categories", "participants"].some(id => !isPanelHidden(id));
+  const bodyCols = showSidebar ? "300px 1fr" : "1fr";
+  const sidebar = showSidebar ? renderSidebar(ds) : "";
   const mainInner = state.tab === "table" ? renderTable(ds, engines) : renderCharts(ds, engines);
   const qp = queryPanelData(ds);
-  const queryPanel = state.max ? "" : renderQueryPanel(qp);
+  const queryPanel = state.max || isPanelHidden("query") ? "" : renderQueryPanel(qp);
 
   html += `<div style="display:grid;grid-template-columns:${bodyCols};column-gap:14px;flex:1;min-height:0">
       ${sidebar}
@@ -779,8 +847,6 @@ function wire() {
       case "cells": state.valueMode = el.getAttribute("data-v"); render(); break;
       case "scale": state.scale = el.getAttribute("data-v"); render(); break;
       case "dataset": state.dataset = el.getAttribute("data-name"); state.sel = null; state.explainOpen = false; render(); break;
-      case "tag": { const t = el.getAttribute("data-tag"); state.activeTags.has(t) ? state.activeTags.delete(t) : state.activeTags.add(t); render(); break; }
-      case "clear-tags": state.activeTags.clear(); render(); break;
       case "qtask": { const t = el.getAttribute("data-task"); state.activeQTasks.has(t) ? state.activeQTasks.delete(t) : state.activeQTasks.add(t); render(); break; }
       case "clear-qtasks": state.activeQTasks.clear(); render(); break;
       case "part": {
@@ -793,7 +859,14 @@ function wire() {
         }
         render(); break;
       }
-      case "show-all": state.hidden.clear(); render(); break;
+      case "toggle-all": {
+        const ds = curDataset();
+        const present = universeOrder(ds).filter(s => rowsFor(ds).some(r => r.system === s));
+        const allSelected = present.length > 0 && !present.some(s => state.hidden.has(s));
+        if (allSelected) present.forEach(s => state.hidden.add(s));
+        else present.forEach(s => state.hidden.delete(s));
+        render(); break;
+      }
       case "max": state.max = !state.max; render(); break;
       case "sortrow": {
         const k = el.getAttribute("data-key");
@@ -855,7 +928,8 @@ function wire() {
 }
 
 function init() {
-  applyTheme(getStoredTheme() === "light" ? "light" : "dark");
+  restoreUrlState();
+  applyTheme(state.theme === "light" ? "light" : (getStoredTheme() === "light" ? "light" : "dark"));
   wire();
   render();
 }
