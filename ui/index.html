@@ -6,21 +6,21 @@
      (a small PC site) instead of a reflowed mobile layout. Desktop browsers
      ignore the viewport width, so they lay out at the real window size. -->
 <meta name="viewport" content="width=1280">
-<title>SearchBench — full-text search benchmark</title>
-<meta name="description" content="Compare full-text search performance on log-shaped data across SereneDB, Elasticsearch, OpenSearch, and ParadeDB.">
+<title>SearchBench - an open benchmark for search and analytics.</title>
+<meta name="description" content="Compare full-text search and analytics performance across SereneDB, Elastic, OpenSearch and more.">
 <link rel="canonical" href="https://serenedb.com/searchbench/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SearchBench">
-<meta property="og:title" content="SearchBench — full-text search benchmark">
-<meta property="og:description" content="Compare full-text search performance on log-shaped data across SereneDB, Elasticsearch, OpenSearch, and ParadeDB.">
+<meta property="og:title" content="SearchBench - an open benchmark for search and analytics.">
+<meta property="og:description" content="Compare full-text search and analytics performance across SereneDB, Elastic, OpenSearch and more.">
 <meta property="og:url" content="https://serenedb.com/searchbench/">
 <meta property="og:image" content="https://serenedb.com/searchbench/preview.png">
 <meta property="og:image:width" content="2984">
 <meta property="og:image:height" content="1860">
 <meta property="og:image:alt" content="SearchBench results comparing full-text search engines on one billion OpenTelemetry logs">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="SearchBench — full-text search benchmark">
-<meta name="twitter:description" content="Compare full-text search performance on log-shaped data across SereneDB, Elasticsearch, OpenSearch, and ParadeDB.">
+<meta name="twitter:title" content="SearchBench - an open benchmark for search and analytics.">
+<meta name="twitter:description" content="Compare full-text search and analytics performance across SereneDB, Elastic, OpenSearch and more.">
 <meta name="twitter:image" content="https://serenedb.com/searchbench/preview.png">
 <meta name="twitter:image:alt" content="SearchBench results comparing full-text search engines on one billion OpenTelemetry logs">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23895AF8' fill-opacity='.3'/%3E%3Cpath d='M26 16C26 10.48 21.52 6 16 6 10.48 6 6 10.48 6 16c0 5.52 4.48 10 10 10 5.52 0 10-4.48 10-10Z' fill='%23895AF8'/%3E%3Cpath d='M12.68 19.33c3.25 3.25 8.15 3.63 10.94.84 2.79-2.79 2.41-7.69-.84-10.94-3.26-3.25-8.15-3.63-10.94-.84-2.79 2.79-2.41 7.69.84 10.94Z' fill='%2380BEFF'/%3E%3Cpath d='M17.18 14.82c1.63 1.63 4.05 1.84 5.42.47 1.37-1.37 1.16-3.79-.47-5.42-1.63-1.63-4.05-1.84-5.42-.47-1.37 1.37-1.16 3.79.47 5.42Z' fill='%23fff'/%3E%3C/svg%3E">
@@ -473,9 +473,9 @@ function renderHeader() {
       `<button class="${state.theme === v ? "on" : ""}" data-act="theme" data-v="${v}" style="padding:3px 8px;font-size:10.5px">${l}</button>`
     ).join("") + `</div>`;
   const inner = `<div style="padding:8px 14px;display:flex;align-items:center;gap:10px">
-      ${LOGO}
+      <a href="https://serenedb.com" aria-label="Go to SereneDB" style="display:flex;flex-shrink:0">${LOGO}</a>
       <div style="font-size:15px;font-weight:700;letter-spacing:-.01em">SearchBench${CURSOR}</div>
-      <div style="font-size:11px;color:var(--mut)">full-text search on log-shaped data</div>
+      <div style="font-size:11px;color:var(--mut)">Open benchmark for search and analytics</div>
       ${repoLink}
       ${themeSeg}
     </div>`;
