@@ -229,22 +229,22 @@ function restoreUrlState() {
 }
 
 // ---- data helpers ----------------------------------------------------------
-const datasets = [...new Set(DATA.map(d => d.dataset))].sort((a, b) => {
-  const ca = DATA.filter(d => d.dataset === a).length, cb = DATA.filter(d => d.dataset === b).length;
-  return cb - ca || a.localeCompare(b);
-});
-function rowsFor(ds) { return DATA.filter(d => d.dataset === ds); }
 function datasetItems(ds) {
   const m = /(?:_|^)(\d+)([kmb])(?:_|$)/i.exec(ds || "");
   if (!m) return null;
   const unit = { k: 1e3, m: 1e6, b: 1e9 }[m[2].toLowerCase()];
   return unit ? +m[1] * unit : null;
 }
+const datasets = [...new Set(DATA.map(d => d.dataset))].sort((a, b) => {
+  const sizeA = datasetItems(a) ?? -1;
+  const sizeB = datasetItems(b) ?? -1;
+  return sizeB - sizeA || a.localeCompare(b);
+});
+function rowsFor(ds) { return DATA.filter(d => d.dataset === ds); }
 function fmtItems(n) { return Number.isFinite(n) ? new Intl.NumberFormat("en-US").format(n) : "—"; }
 function curDataset() {
   if (state.dataset) return state.dataset;
-  const withPlan = DATA.find(d => Array.isArray(d.explain_analyzes) && d.explain_analyzes.some(x => x && String(x).trim()));
-  return (withPlan && withPlan.dataset) || datasets[0] || null;
+  return datasets[0] || null;
 }
 function tagsOf(row) {
   const name = (row.system || "").toLowerCase();
