@@ -189,28 +189,52 @@ let dragSys = null, lastOver = null;
 const HIDEABLE_PANELS = new Set(["header", "dataset", "config", "categories", "participants", "query", "expand"]);
 function isPanelHidden(id) { return state.hiddenPanels.has(id); }
 
-// Keep benchmark views shareable: every sidebar control and the expanded
-// main-view state is represented in the URL, without requiring a backend.
+// Keep benchmark views shareable: the complete UI state lives in one
+// URL-safe base64 payload (`?s=`), without requiring a backend. The previous
+// readable query parameters remain accepted so old shared links keep working.
 function csv(values) { return [...values].filter(Boolean).sort().join(","); }
+function base64UrlEncode(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = "";
+  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function base64UrlDecode(value) {
+  if (!value) return null;
+  try {
+    const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((value.length + 3) % 4);
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    return parsed && parsed.v === 1 ? parsed : null;
+  } catch (_) { return null; }
+}
+function shortState() {
+  // Keep only deviations from the initial UI. The common default link is thus
+  // `?s=eyJ2IjoxfQ` instead of a full JSON dump of empty/default fields.
+  const compact = { v: 1 };
+  const put = (key, value, defaultValue) => { if (value !== defaultValue && value != null && value !== "") compact[key] = value; };
+  put("d", curDataset(), datasets[0] || null);
+  put("t", state.tab, "table");
+  put("r", state.metric, "hot");
+  put("c", state.valueMode, "relative");
+  put("l", state.scale, "log");
+  put("q", csv(state.activeQTasks), "");
+  put("h", csv(state.hidden), "");
+  put("s", state.sortRow, "geomean");
+  put("sd", state.sortDir, 1);
+  put("e", state.sortByEngine, null);
+  put("ed", state.sortByEngineDir, 1);
+  put("o", (state.manualOrder || []).join(","), "");
+  put("th", state.theme, "dark");
+  put("x", state.max ? 1 : 0, 0);
+  put("p", csv(state.hiddenPanels), "");
+  return compact;
+}
 function syncUrlState() {
   try {
     const p = new URLSearchParams();
-    const put = (key, value) => { if (value != null && value !== "") p.set(key, value); };
-    put("dataset", curDataset());
-    put("view", state.tab);
-    put("run", state.metric);
-    put("cells", state.valueMode);
-    put("scale", state.scale);
-    put("categories", csv(state.activeQTasks));
-    put("hidden", csv(state.hidden));
-    put("sort", state.sortRow);
-    put("sortDir", state.sortDir);
-    put("sortEngine", state.sortByEngine);
-    put("sortEngineDir", state.sortByEngineDir);
-    put("order", (state.manualOrder || []).join(","));
-    put("theme", state.theme);
-    put("expanded", state.max ? "1" : "0");
-    put("hide", csv(state.hiddenPanels));
+    p.set("s", base64UrlEncode(shortState()));
     const query = p.toString();
     const next = window.location.pathname + (query ? "?" + query : "") + window.location.hash;
     window.history.replaceState(null, "", next);
@@ -219,10 +243,16 @@ function syncUrlState() {
 function restoreUrlState() {
   try {
     const p = new URLSearchParams(window.location.search);
-    const oneOf = (key, allowed, fallback) => allowed.includes(p.get(key)) ? p.get(key) : fallback;
+    const packed = base64UrlDecode(p.get("s"));
+    const fields = { dataset: "d", view: "t", run: "r", cells: "c", scale: "l", categories: "q", hidden: "h", sort: "s", sortDir: "sd", sortEngine: "e", sortEngineDir: "ed", order: "o", theme: "th", expanded: "x", hide: "p" };
+    // A packed short state is the baseline, while readable parameters next to
+    // it are intentional overrides. This makes links like `?s=…&hide=header`
+    // practical for embeds; the next render canonicalizes them back to `?s=`.
+    const get = key => p.has(key) ? p.get(key) : (packed ? packed[fields[key]] : null);
+    const oneOf = (key, allowed, fallback) => allowed.includes(get(key)) ? get(key) : fallback;
     const validSystems = new Set(DATA.map(r => r.system));
-    const split = key => (p.get(key) || "").split(",").filter(Boolean);
-    const dataset = p.get("dataset");
+    const split = key => String(get(key) || "").split(",").filter(Boolean);
+    const dataset = get("dataset");
     if (datasets.includes(dataset)) state.dataset = dataset;
     state.tab = oneOf("view", ["table", "charts"], state.tab);
     state.metric = oneOf("run", ["cold", "hot"], state.metric);
@@ -230,14 +260,14 @@ function restoreUrlState() {
     state.scale = oneOf("scale", ["log", "linear"], state.scale);
     state.activeQTasks = new Set(split("categories").filter(t => qTasksFor().includes(t)));
     state.hidden = new Set(split("hidden").filter(s => validSystems.has(s)));
-    state.sortRow = p.get("sort") || state.sortRow;
-    state.sortDir = p.get("sortDir") === "-1" ? -1 : 1;
-    const engine = p.get("sortEngine");
+    state.sortRow = get("sort") || state.sortRow;
+    state.sortDir = String(get("sortDir")) === "-1" ? -1 : 1;
+    const engine = get("sortEngine");
     state.sortByEngine = validSystems.has(engine) ? engine : null;
-    state.sortByEngineDir = p.get("sortEngineDir") === "-1" ? -1 : 1;
+    state.sortByEngineDir = String(get("sortEngineDir")) === "-1" ? -1 : 1;
     const order = split("order").filter(s => validSystems.has(s));
     state.manualOrder = order.length ? order : null;
-    state.max = p.get("expanded") === "1";
+    state.max = String(get("expanded")) === "1";
     state.hiddenPanels = new Set(split("hide").filter(id => HIDEABLE_PANELS.has(id)));
     const theme = oneOf("theme", ["dark", "light"], null);
     if (theme) state.theme = theme;
