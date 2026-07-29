@@ -30,7 +30,7 @@ export PG_IMAGE PG_CONTAINER PG_PASSWORD PG_DATA_DIR
 : "${SERENED_IMAGE:=serenedb/serenedb:26.07.5}"
 export SERENED_IMAGE
 serened_shell() {
-    docker run --rm --network host \
+    docker run --rm --network host --log-driver none \
         -v "${SEARCHBENCH_DATA_DIR}:${SEARCHBENCH_DATA_DIR}:ro" \
         --entrypoint serened "$SERENED_IMAGE" shell -c "$1"
 }

@@ -26,7 +26,7 @@
 # DuckDB) and emits NDJSON on stdout for arangoimport. Corpus identity-mounted.
 : "${SERENED_IMAGE:=serenedb/serenedb:26.07.5}"
 serened_shell() {
-    docker run --rm --network host \
+    docker run --rm --network host --log-driver none \
         -v "${SEARCHBENCH_DATA_DIR}:${SEARCHBENCH_DATA_DIR}:ro" \
         --entrypoint serened "$SERENED_IMAGE" shell -c "$1"
 }

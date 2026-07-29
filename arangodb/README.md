@@ -32,7 +32,6 @@ unaffected by `SEARCHBENCH_PROGRESS_INTERVAL`.
 | `ARANGO_IMAGE` | `arangodb/enterprise:3.12` | image |
 | `ARANGO_CONTAINER` | `searchbench-arango` | container |
 | `ARANGO_DATA_DIR` | `$PWD/arango_data` | host bind-mount data dir; wiped by `./install` |
-| `ARANGOIMPORT_THREADS` | `4` | import parallelism |
 
 Index + analyzer in [`load`](load); workload in [`queries.aql`](queries.aql).
 Query latencies come from each cursor's `extra.stats.executionTime`.

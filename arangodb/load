@@ -5,7 +5,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
 : "${SEARCHBENCH_DATASET:=otel_logs_1b}"
 : "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
 : "${SEARCHBENCH_PROGRESS_INTERVAL:=10}"
-: "${ARANGOIMPORT_THREADS:=4}"
 
 log() { printf '%s\n' "$*" >&2; }
 
@@ -81,7 +80,7 @@ arango_import() {
         --server.database "$ARANGO_DB" \
         --server.authentication false \
         --type jsonl --collection "$ARANGO_COLLECTION" \
-        --file - --progress true --threads "$ARANGOIMPORT_THREADS"
+        --file - --progress true
 }
 
 log "==> import documents (serened COPY->NDJSON | arangoimport)"
