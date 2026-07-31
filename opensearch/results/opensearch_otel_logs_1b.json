@@ -2,931 +2,179 @@
   "system": "OpenSearch",
   "version": "2.18.0",
   "os": "Ubuntu 24.04.4 LTS",
-  "date": "2026-07-05",
+  "date": "2026-07-31",
   "dataset": "otel_logs_1b",
-  "tags": [
-    "Java",
-    "Lucene",
-    "OpenSearch",
-    "REST"
-  ],
-  "load_time": 21979.930,
-  "data_size": 290826290347,
+  "tags": ["Java","Lucene","OpenSearch","REST"],
+  "load_time": 22615.837,
+  "data_size": 292284040520,
   "result": [
-    [
-      0.203199,
-      0.014508,
-      0.010357
+        [0.257266,0.012053,0.011282],
+        [0.256011,0.013903,0.011615],
+        [0.432408,0.083389,0.083755],
+        [0.841874,0.125681,0.121948],
+        [0.371633,0.017381,0.017266],
+        [0.341464,0.096156,0.094916],
+        [0.354819,0.041631,0.038811],
+        [0.273373,0.026424,0.022130],
+        [0.940570,0.554253,0.556095],
+        [0.317125,0.138540,0.139957],
+        [0.742258,0.282289,0.304949],
+        [0.467695,0.031887,0.031425],
+        [0.709828,0.331063,0.333350],
+        [0.835508,0.290038,0.281861],
+        [0.949150,0.211608,0.209917],
+        [0.287091,0.056973,0.036770],
+        [0.232607,0.038652,0.037768],
+        [0.298241,0.040643,0.044382],
+        [0.313254,0.049458,0.039372],
+        [0.418001,0.060413,0.034555],
+        [0.249217,0.042592,0.041690],
+        [3.268525,0.036961,0.029591],
+        [17.275217,0.130785,0.127598],
+        [17.141406,0.179263,0.168943],
+        [0.344160,0.036624,0.032999],
+        [3.917628,0.505368,0.469971],
+        [3.924459,0.700552,0.676133],
+        [0.370263,0.099657,0.099205],
+        [0.980484,0.345896,0.345944],
+        [0.241449,0.014283,0.013003],
+        [0.535718,0.197428,0.171558],
+        [0.256519,0.037296,0.024344],
+        [0.361029,0.042416,0.044107],
+        [0.394078,0.049186,0.034489],
+        [0.318673,0.035375,0.043226],
+        [0.642148,0.124604,0.054758],
+        [2.002470,0.327119,0.322545],
+        [0.647716,0.060003,0.057830],
+        [0.668501,0.327074,0.230171],
+        [0.503611,0.082944,0.085188],
+        [0.622364,0.096382,0.094583],
+        [1.303803,0.804206,0.800366],
+        [0.186816,0.050345,0.039686],
+        [0.420418,0.055358,0.047651],
+        [0.458001,0.048695,0.052422],
+        [0.295634,0.044671,0.041051],
+        [0.105831,0.039514,0.030321],
+        [3.196093,0.067253,0.054390],
+        [16.921497,0.221828,0.152344],
+        [0.381072,0.040424,0.037702],
+        [1.119912,0.415068,0.346099],
+        [0.375403,0.047669,0.042246],
+        [0.367087,0.043762,0.032091],
+        [0.627248,0.260534,0.266769],
+        [0.667650,0.082982,0.078400],
+        [0.788160,0.125097,0.122309],
+        [0.783599,0.431261,0.386700],
+        [0.737115,0.218262,0.181326],
+        [3.531704,0.186641,0.143553],
+        [0.832749,0.386936,0.351223],
+        [1.070755,0.229423,0.219885],
+        [0.771715,0.212229,0.205636],
+        [1.208884,0.357140,0.354607],
+        [1.130840,0.507181,0.496149],
+        [1.092778,0.236919,0.229300],
+        [0.997437,0.246874,0.253323],
+        [1.217596,0.683570,0.657019],
+        [0.586322,0.131405,0.083941],
+        [1.186087,0.477033,0.234628],
+        [0.988594,0.341411,0.290508],
+        [1.458312,0.786527,0.749490],
+        [1.034315,0.365589,0.358690],
+        [4.020090,3.150018,3.239812],
+        [1.499114,0.995393,0.866679],
+        [0.816320,0.086964,0.116838],
+        [0.439937,0.062434,0.059319],
+        [1.310703,0.584515,0.567968],
+        [0.482435,0.057738,0.040632],
+        [0.428304,0.062041,0.052400],
+        [0.161777,0.041041,0.038105],
+        [0.173802,0.024778,0.025472],
+        [0.127149,0.034936,0.032671],
+        [0.372179,0.104888,0.059436]
     ],
-    [
-      0.135314,
-      0.011479,
-      0.009640
-    ],
-    [
-      0.448733,
-      0.087194,
-      0.087792
-    ],
-    [
-      0.444640,
-      0.116350,
-      0.113065
-    ],
-    [
-      0.372517,
-      0.018789,
-      0.018392
-    ],
-    [
-      0.277566,
-      0.062789,
-      0.063373
-    ],
-    [
-      0.231820,
-      0.045065,
-      0.040430
-    ],
-    [
-      0.190767,
-      0.065268,
-      0.017756
-    ],
-    [
-      0.898110,
-      0.660736,
-      0.572097
-    ],
-    [
-      0.411539,
-      0.157541,
-      0.139325
-    ],
-    [
-      0.565820,
-      0.298877,
-      0.338922
-    ],
-    [
-      0.259052,
-      0.036707,
-      0.029483
-    ],
-    [
-      0.537852,
-      0.349499,
-      0.361780
-    ],
-    [
-      0.647098,
-      0.548754,
-      0.274353
-    ],
-    [
-      0.544336,
-      0.219731,
-      0.221705
-    ],
-    [
-      0.271289,
-      0.039070,
-      0.041032
-    ],
-    [
-      0.214781,
-      0.034343,
-      0.033797
-    ],
-    [
-      0.511007,
-      0.028926,
-      0.032700
-    ],
-    [
-      0.274536,
-      0.054835,
-      0.038157
-    ],
-    [
-      0.395881,
-      0.035777,
-      0.032718
-    ],
-    [
-      0.323894,
-      0.037834,
-      0.037387
-    ],
-    [
-      1.263464,
-      0.029650,
-      0.029756
-    ],
-    [
-      11.857392,
-      0.110952,
-      0.105812
-    ],
-    [
-      1.040559,
-      0.273513,
-      0.150158
-    ],
-    [
-      0.303284,
-      0.070662,
-      0.031402
-    ],
-    [
-      1.641651,
-      0.510224,
-      0.503415
-    ],
-    [
-      1.457045,
-      0.795039,
-      0.728159
-    ],
-    [
-      0.303866,
-      0.097754,
-      0.094058
-    ],
-    [
-      0.743520,
-      0.348707,
-      0.349491
-    ],
-    [
-      0.064553,
-      0.011391,
-      0.011703
-    ],
-    [
-      0.613187,
-      0.152963,
-      0.162673
-    ],
-    [
-      0.196655,
-      0.031378,
-      0.034763
-    ],
-    [
-      0.230721,
-      0.052200,
-      0.045551
-    ],
-    [
-      0.191493,
-      0.065250,
-      0.040788
-    ],
-    [
-      0.149530,
-      0.045702,
-      0.043096
-    ],
-    [
-      0.440771,
-      0.162476,
-      0.060334
-    ],
-    [
-      1.384959,
-      0.297852,
-      0.293141
-    ],
-    [
-      0.677244,
-      0.200880,
-      0.067499
-    ],
-    [
-      0.617381,
-      0.235574,
-      0.240939
-    ],
-    [
-      0.453629,
-      0.106031,
-      0.111593
-    ],
-    [
-      0.705178,
-      0.092177,
-      0.083993
-    ],
-    [
-      1.164062,
-      0.924772,
-      0.821541
-    ],
-    [
-      0.182824,
-      0.056646,
-      0.052698
-    ],
-    [
-      0.250114,
-      0.096093,
-      0.056087
-    ],
-    [
-      0.201994,
-      0.057528,
-      0.044653
-    ],
-    [
-      0.372256,
-      0.042270,
-      0.038758
-    ],
-    [
-      0.125362,
-      0.039476,
-      0.037555
-    ],
-    [
-      0.324610,
-      0.078360,
-      0.065468
-    ],
-    [
-      0.506802,
-      0.211054,
-      0.145163
-    ],
-    [
-      0.403521,
-      0.047903,
-      0.035648
-    ],
-    [
-      0.889413,
-      0.380420,
-      0.355305
-    ],
-    [
-      0.247796,
-      0.065396,
-      0.039352
-    ],
-    [
-      0.182585,
-      0.046185,
-      0.048933
-    ],
-    [
-      0.669657,
-      0.248591,
-      0.255820
-    ],
-    [
-      0.369823,
-      0.098058,
-      0.087065
-    ],
-    [
-      0.527573,
-      0.124847,
-      0.121945
-    ],
-    [
-      0.792592,
-      0.298777,
-      0.301318
-    ],
-    [
-      1.077292,
-      0.143125,
-      0.102235
-    ],
-    [
-      0.371450,
-      0.071447,
-      0.070650
-    ],
-    [
-      0.619128,
-      0.246031,
-      0.245900
-    ],
-    [
-      0.714440,
-      0.241454,
-      0.244833
-    ],
-    [
-      0.655408,
-      0.229716,
-      0.219395
-    ],
-    [
-      0.937073,
-      0.361197,
-      0.335541
-    ],
-    [
-      0.907944,
-      0.502481,
-      0.512657
-    ],
-    [
-      0.592600,
-      0.228456,
-      0.258379
-    ],
-    [
-      1.170410,
-      0.230867,
-      0.235644
-    ],
-    [
-      1.022585,
-      0.662196,
-      0.671167
-    ],
-    [
-      0.542762,
-      0.130706,
-      0.154130
-    ],
-    [
-      1.100694,
-      0.263441,
-      0.195338
-    ],
-    [
-      0.857727,
-      0.267352,
-      0.335821
-    ],
-    [
-      1.570989,
-      0.932742,
-      0.729199
-    ],
-    [
-      1.343230,
-      0.452928,
-      0.344711
-    ],
-    [
-      3.612825,
-      2.945384,
-      2.555535
-    ],
-    [
-      1.533736,
-      0.908788,
-      0.749877
-    ],
-    [
-      0.769240,
-      0.112395,
-      0.116963
-    ],
-    [
-      0.327730,
-      0.082642,
-      0.047603
-    ],
-    [
-      1.187369,
-      0.556900,
-      0.572629
-    ],
-    [
-      0.207812,
-      0.065634,
-      0.039376
-    ],
-    [
-      0.234277,
-      0.075376,
-      0.052717
-    ],
-    [
-      0.166474,
-      0.046117,
-      0.042715
-    ],
-    [
-      0.105510,
-      0.025659,
-      0.022647
-    ],
-    [
-      0.137862,
-      0.043954,
-      0.041430
-    ],
-    [
-      0.328753,
-      0.104462,
-      0.065621
-    ]
-  ],
   "query_tags": [
-    {
-      "id": "Q01",
-      "task": "count",
-      "filter": "term",
-      "freq": "hi"
-    },
-    {
-      "id": "Q02",
-      "task": "count",
-      "filter": "term",
-      "freq": "lo"
-    },
-    {
-      "id": "Q03",
-      "task": "count",
-      "filter": "and",
-      "freq": "hi"
-    },
-    {
-      "id": "Q04",
-      "task": "count",
-      "filter": "and",
-      "freq": "hi"
-    },
-    {
-      "id": "Q05",
-      "task": "count",
-      "filter": "and",
-      "freq": "lo"
-    },
-    {
-      "id": "Q06",
-      "task": "count",
-      "filter": "or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q07",
-      "task": "count",
-      "filter": "or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q08",
-      "task": "count",
-      "filter": "or",
-      "freq": "mid"
-    },
-    {
-      "id": "Q09",
-      "task": "count",
-      "filter": "or,minmatch",
-      "freq": "hi"
-    },
-    {
-      "id": "Q10",
-      "task": "count",
-      "filter": "phrase",
-      "freq": "mid"
-    },
-    {
-      "id": "Q11",
-      "task": "count",
-      "filter": "phrase",
-      "freq": "mid"
-    },
-    {
-      "id": "Q12",
-      "task": "count",
-      "filter": "phrase",
-      "freq": "lo"
-    },
-    {
-      "id": "Q13",
-      "task": "count",
-      "filter": "phrase,proximity",
-      "freq": "hi"
-    },
-    {
-      "id": "Q14",
-      "task": "count",
-      "filter": "phrase,or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q15",
-      "task": "count",
-      "filter": "phrase,and",
-      "freq": "mid"
-    },
-    {
-      "id": "Q16",
-      "task": "count",
-      "filter": "regexp",
-      "freq": "hi"
-    },
-    {
-      "id": "Q17",
-      "task": "count",
-      "filter": "regexp",
-      "freq": "hi"
-    },
-    {
-      "id": "Q18",
-      "task": "count",
-      "filter": "regexp",
-      "freq": "mid"
-    },
-    {
-      "id": "Q19",
-      "task": "count",
-      "filter": "regexp",
-      "freq": "hi"
-    },
-    {
-      "id": "Q20",
-      "task": "count",
-      "filter": "prefix",
-      "freq": "mid"
-    },
-    {
-      "id": "Q21",
-      "task": "count",
-      "filter": "prefix",
-      "freq": "hi"
-    },
-    {
-      "id": "Q22",
-      "task": "count",
-      "filter": "fuzzy",
-      "freq": "mid"
-    },
-    {
-      "id": "Q23",
-      "task": "count",
-      "filter": "fuzzy",
-      "freq": "mid"
-    },
-    {
-      "id": "Q24",
-      "task": "count",
-      "filter": "fuzzy,prefix",
-      "freq": "mid"
-    },
-    {
-      "id": "Q25",
-      "task": "count",
-      "filter": "like",
-      "freq": "mid"
-    },
-    {
-      "id": "Q26",
-      "task": "count",
-      "filter": "like",
-      "freq": "hi"
-    },
-    {
-      "id": "Q27",
-      "task": "count",
-      "filter": "like",
-      "freq": "mid"
-    },
-    {
-      "id": "Q28",
-      "task": "count",
-      "filter": "and,negation",
-      "freq": "hi"
-    },
-    {
-      "id": "Q29",
-      "task": "count",
-      "filter": "or,negation",
-      "freq": "hi"
-    },
-    {
-      "id": "Q30",
-      "task": "count",
-      "filter": "term,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q31",
-      "task": "count",
-      "filter": "and,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q32",
-      "task": "count",
-      "filter": "or,window",
-      "freq": "mid"
-    },
-    {
-      "id": "Q33",
-      "task": "top_k",
-      "filter": "term",
-      "freq": "hi"
-    },
-    {
-      "id": "Q34",
-      "task": "top_k",
-      "filter": "term",
-      "freq": "mid"
-    },
-    {
-      "id": "Q35",
-      "task": "top_k",
-      "filter": "term",
-      "freq": "lo"
-    },
-    {
-      "id": "Q36",
-      "task": "top_k",
-      "filter": "and",
-      "freq": "hi"
-    },
-    {
-      "id": "Q37",
-      "task": "top_k",
-      "filter": "and",
-      "freq": "hi"
-    },
-    {
-      "id": "Q38",
-      "task": "top_k",
-      "filter": "and",
-      "freq": "lo"
-    },
-    {
-      "id": "Q39",
-      "task": "top_k",
-      "filter": "or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q40",
-      "task": "top_k",
-      "filter": "or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q41",
-      "task": "top_k",
-      "filter": "or",
-      "freq": "mid"
-    },
-    {
-      "id": "Q42",
-      "task": "top_k",
-      "filter": "or,minmatch",
-      "freq": "hi"
-    },
-    {
-      "id": "Q43",
-      "task": "top_k",
-      "filter": "phrase",
-      "freq": "mid"
-    },
-    {
-      "id": "Q44",
-      "task": "top_k",
-      "filter": "phrase",
-      "freq": "mid"
-    },
-    {
-      "id": "Q45",
-      "task": "top_k",
-      "filter": "phrase",
-      "freq": "lo"
-    },
-    {
-      "id": "Q46",
-      "task": "top_k",
-      "filter": "regexp",
-      "freq": "mid"
-    },
-    {
-      "id": "Q47",
-      "task": "top_k",
-      "filter": "prefix",
-      "freq": "hi"
-    },
-    {
-      "id": "Q48",
-      "task": "top_k",
-      "filter": "fuzzy",
-      "freq": "mid"
-    },
-    {
-      "id": "Q49",
-      "task": "top_k",
-      "filter": "fuzzy",
-      "freq": "mid"
-    },
-    {
-      "id": "Q50",
-      "task": "top_k",
-      "filter": "like",
-      "freq": "mid"
-    },
-    {
-      "id": "Q51",
-      "task": "top_k",
-      "filter": "phrase,or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q52",
-      "task": "top_k",
-      "filter": "and,negation",
-      "freq": "hi"
-    },
-    {
-      "id": "Q53",
-      "task": "top_k",
-      "filter": "and,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q54",
-      "task": "group_by",
-      "filter": "or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q55",
-      "task": "group_by",
-      "filter": "term",
-      "freq": "hi"
-    },
-    {
-      "id": "Q56",
-      "task": "group_by",
-      "filter": "and",
-      "freq": "hi"
-    },
-    {
-      "id": "Q57",
-      "task": "group_by",
-      "filter": "or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q58",
-      "task": "group_by",
-      "filter": "regexp",
-      "freq": "hi"
-    },
-    {
-      "id": "Q59",
-      "task": "group_by",
-      "filter": "fuzzy",
-      "freq": "mid"
-    },
-    {
-      "id": "Q60",
-      "task": "group_by",
-      "filter": "or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q61",
-      "task": "group_by",
-      "filter": "term",
-      "freq": "hi"
-    },
-    {
-      "id": "Q62",
-      "task": "group_by",
-      "filter": "and",
-      "freq": "hi"
-    },
-    {
-      "id": "Q63",
-      "task": "group_by",
-      "filter": "phrase",
-      "freq": "mid"
-    },
-    {
-      "id": "Q64",
-      "task": "group_by",
-      "filter": "or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q65",
-      "task": "group_by",
-      "filter": "term",
-      "freq": "hi"
-    },
-    {
-      "id": "Q66",
-      "task": "group_by",
-      "filter": "and",
-      "freq": "hi"
-    },
-    {
-      "id": "Q67",
-      "task": "group_by",
-      "filter": "or",
-      "freq": "hi"
-    },
-    {
-      "id": "Q68",
-      "task": "recent",
-      "filter": "and,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q69",
-      "task": "recent",
-      "filter": "or,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q70",
-      "task": "recent",
-      "filter": "term,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q71",
-      "task": "recent",
-      "filter": "phrase,window",
-      "freq": "mid"
-    },
-    {
-      "id": "Q72",
-      "task": "recent",
-      "filter": "and,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q73",
-      "task": "recent",
-      "filter": "window",
-      "freq": ""
-    },
-    {
-      "id": "Q74",
-      "task": "recent",
-      "filter": "regexp,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q75",
-      "task": "recent",
-      "filter": "or,window",
-      "freq": "mid"
-    },
-    {
-      "id": "Q76",
-      "task": "recent",
-      "filter": "and,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q77",
-      "task": "recent",
-      "filter": "or,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q78",
-      "task": "recent",
-      "filter": "term,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q79",
-      "task": "recent",
-      "filter": "phrase,window",
-      "freq": "mid"
-    },
-    {
-      "id": "Q80",
-      "task": "recent",
-      "filter": "and,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q81",
-      "task": "recent",
-      "filter": "window",
-      "freq": ""
-    },
-    {
-      "id": "Q82",
-      "task": "recent",
-      "filter": "regexp,window",
-      "freq": "hi"
-    },
-    {
-      "id": "Q83",
-      "task": "recent",
-      "filter": "or,window",
-      "freq": "mid"
-    }
-  ]
+        {"id":"Q01","task":"count","filter":"term","freq":"hi"},
+        {"id":"Q02","task":"count","filter":"term","freq":"lo"},
+        {"id":"Q03","task":"count","filter":"and","freq":"hi"},
+        {"id":"Q04","task":"count","filter":"and","freq":"hi"},
+        {"id":"Q05","task":"count","filter":"and","freq":"lo"},
+        {"id":"Q06","task":"count","filter":"or","freq":"hi"},
+        {"id":"Q07","task":"count","filter":"or","freq":"hi"},
+        {"id":"Q08","task":"count","filter":"or","freq":"mid"},
+        {"id":"Q09","task":"count","filter":"or,minmatch","freq":"hi"},
+        {"id":"Q10","task":"count","filter":"phrase","freq":"mid"},
+        {"id":"Q11","task":"count","filter":"phrase","freq":"mid"},
+        {"id":"Q12","task":"count","filter":"phrase","freq":"lo"},
+        {"id":"Q13","task":"count","filter":"phrase,proximity","freq":"hi"},
+        {"id":"Q14","task":"count","filter":"phrase,or","freq":"hi"},
+        {"id":"Q15","task":"count","filter":"phrase,and","freq":"mid"},
+        {"id":"Q16","task":"count","filter":"regexp","freq":"hi"},
+        {"id":"Q17","task":"count","filter":"regexp","freq":"hi"},
+        {"id":"Q18","task":"count","filter":"regexp","freq":"mid"},
+        {"id":"Q19","task":"count","filter":"regexp","freq":"hi"},
+        {"id":"Q20","task":"count","filter":"prefix","freq":"mid"},
+        {"id":"Q21","task":"count","filter":"prefix","freq":"hi"},
+        {"id":"Q22","task":"count","filter":"fuzzy","freq":"mid"},
+        {"id":"Q23","task":"count","filter":"fuzzy","freq":"mid"},
+        {"id":"Q24","task":"count","filter":"fuzzy,prefix","freq":"mid"},
+        {"id":"Q25","task":"count","filter":"like","freq":"mid"},
+        {"id":"Q26","task":"count","filter":"like","freq":"hi"},
+        {"id":"Q27","task":"count","filter":"like","freq":"mid"},
+        {"id":"Q28","task":"count","filter":"and,negation","freq":"hi"},
+        {"id":"Q29","task":"count","filter":"or,negation","freq":"hi"},
+        {"id":"Q30","task":"count","filter":"term,window","freq":"hi"},
+        {"id":"Q31","task":"count","filter":"and,window","freq":"hi"},
+        {"id":"Q32","task":"count","filter":"or,window","freq":"mid"},
+        {"id":"Q33","task":"top_k","filter":"term","freq":"hi"},
+        {"id":"Q34","task":"top_k","filter":"term","freq":"mid"},
+        {"id":"Q35","task":"top_k","filter":"term","freq":"lo"},
+        {"id":"Q36","task":"top_k","filter":"and","freq":"hi"},
+        {"id":"Q37","task":"top_k","filter":"and","freq":"hi"},
+        {"id":"Q38","task":"top_k","filter":"and","freq":"lo"},
+        {"id":"Q39","task":"top_k","filter":"or","freq":"hi"},
+        {"id":"Q40","task":"top_k","filter":"or","freq":"hi"},
+        {"id":"Q41","task":"top_k","filter":"or","freq":"mid"},
+        {"id":"Q42","task":"top_k","filter":"or,minmatch","freq":"hi"},
+        {"id":"Q43","task":"top_k","filter":"phrase","freq":"mid"},
+        {"id":"Q44","task":"top_k","filter":"phrase","freq":"mid"},
+        {"id":"Q45","task":"top_k","filter":"phrase","freq":"lo"},
+        {"id":"Q46","task":"top_k","filter":"regexp","freq":"mid"},
+        {"id":"Q47","task":"top_k","filter":"prefix","freq":"hi"},
+        {"id":"Q48","task":"top_k","filter":"fuzzy","freq":"mid"},
+        {"id":"Q49","task":"top_k","filter":"fuzzy","freq":"mid"},
+        {"id":"Q50","task":"top_k","filter":"like","freq":"mid"},
+        {"id":"Q51","task":"top_k","filter":"phrase,or","freq":"hi"},
+        {"id":"Q52","task":"top_k","filter":"and,negation","freq":"hi"},
+        {"id":"Q53","task":"top_k","filter":"and,window","freq":"hi"},
+        {"id":"Q54","task":"group_by","filter":"or","freq":"hi"},
+        {"id":"Q55","task":"group_by","filter":"term","freq":"hi"},
+        {"id":"Q56","task":"group_by","filter":"and","freq":"hi"},
+        {"id":"Q57","task":"group_by","filter":"or","freq":"hi"},
+        {"id":"Q58","task":"group_by","filter":"regexp","freq":"hi"},
+        {"id":"Q59","task":"group_by","filter":"fuzzy","freq":"mid"},
+        {"id":"Q60","task":"group_by","filter":"or","freq":"hi"},
+        {"id":"Q61","task":"group_by","filter":"term","freq":"hi"},
+        {"id":"Q62","task":"group_by","filter":"and","freq":"hi"},
+        {"id":"Q63","task":"group_by","filter":"phrase","freq":"mid"},
+        {"id":"Q64","task":"group_by","filter":"or","freq":"hi"},
+        {"id":"Q65","task":"group_by","filter":"term","freq":"hi"},
+        {"id":"Q66","task":"group_by","filter":"and","freq":"hi"},
+        {"id":"Q67","task":"group_by","filter":"or","freq":"hi"},
+        {"id":"Q68","task":"recent","filter":"and,window","freq":"hi"},
+        {"id":"Q69","task":"recent","filter":"or,window","freq":"hi"},
+        {"id":"Q70","task":"recent","filter":"term,window","freq":"hi"},
+        {"id":"Q71","task":"recent","filter":"phrase,window","freq":"mid"},
+        {"id":"Q72","task":"recent","filter":"and,window","freq":"hi"},
+        {"id":"Q73","task":"recent","filter":"window","freq":""},
+        {"id":"Q74","task":"recent","filter":"regexp,window","freq":"hi"},
+        {"id":"Q75","task":"recent","filter":"or,window","freq":"mid"},
+        {"id":"Q76","task":"recent","filter":"and,window","freq":"hi"},
+        {"id":"Q77","task":"recent","filter":"or,window","freq":"hi"},
+        {"id":"Q78","task":"recent","filter":"term,window","freq":"hi"},
+        {"id":"Q79","task":"recent","filter":"phrase,window","freq":"mid"},
+        {"id":"Q80","task":"recent","filter":"and,window","freq":"hi"},
+        {"id":"Q81","task":"recent","filter":"window","freq":""},
+        {"id":"Q82","task":"recent","filter":"regexp,window","freq":"hi"},
+        {"id":"Q83","task":"recent","filter":"or,window","freq":"mid"}
+    ]
 }
