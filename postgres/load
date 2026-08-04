@@ -13,6 +13,10 @@
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+# Parallel ingest: Postgres has no parallel DML, so one connection saturates one
+# core. Scaling curve: lib/pg-parallel-ingest.sh. 1 = single stream.
+: "${PG_LOAD_JOBS:=16}"
+source "$(dirname "$0")/../lib/pg-parallel-ingest.sh"
 
 : "${SEARCHBENCH_DATASET:=otel_logs_1b}"
 : "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
@@ -40,16 +44,7 @@ log "[schema] creating otel_logs table"
 "${PSQL_STOP[@]}" -f create_table.sql
 
 log "[ingest] serened (parquet) --postgres connector--> postgres otel_logs"
-insert_sql="
-ATTACH 'host=${PGHOST} port=${PGPORT} dbname=${PGDATABASE} user=${PGUSER}' AS pg (TYPE postgres);
-INSERT INTO pg.otel_logs (${INSERT_COLS})
-SELECT ${SELECT_PROJ} FROM ${source_expr};
-"
-serened_shell "$insert_sql"
-
-rows=$("${PSQL[@]}" -tA -c 'SELECT count(*) FROM otel_logs' 2>/dev/null | tr -d '[:space:]')
-[[ "${rows:-0}" -gt 0 ]] || { echo "otel_logs is empty after INSERT" >&2; exit 1; }
-log "[ingest] otel_logs row count: ${rows}"
+pg_parallel_ingest "$PG_LOAD_JOBS" otel_logs "$INSERT_COLS" "$SELECT_PROJ"
 
 log "[analyze] VACUUM ANALYZE otel_logs"
 "${PSQL_STOP[@]}" -c 'VACUUM ANALYZE otel_logs;'

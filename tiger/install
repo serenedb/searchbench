@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# TigerData adapter setup. Runs before every benchmark; tears down container +
+# data dir so a leftover table/index doesn't yield a bogus fast load_time.
+#
+# ./load reads parquet via a serened container (SERENED_IMAGE); nothing to do here.
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+command -v docker >/dev/null || { echo "docker not found on PATH" >&2; exit 1; }
+command -v psql   >/dev/null || { echo "psql not found on PATH"   >&2; exit 1; }
+command -v jq     >/dev/null || { echo "jq not found on PATH"     >&2; exit 1; }
+docker info >/dev/null 2>&1  || { echo "docker daemon not reachable" >&2; exit 1; }
+
+docker rm -f "$TIGER_CONTAINER" >/dev/null 2>&1 || true
+# Wipe host bind-mount dir via a root container: Postgres owns those files as
+# uid $TIGER_UID, so a host-side rm hits EPERM.
+if [[ -d "$TIGER_DATA_DIR" ]]; then
+    docker run --rm --log-driver none -v "${TIGER_DATA_DIR}:/data" --entrypoint sh alpine \
+        -c 'rm -rf /data/..?* /data/.[!.]* /data/* 2>/dev/null' >/dev/null 2>&1 || true
+fi

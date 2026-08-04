@@ -17,7 +17,14 @@ export PGHOST PGPORT PGUSER PGDATABASE
 # Host bind-mount under repo (/mnt/data), not a docker named volume: named volumes
 # live on small root disk and overflow at larger scales (cf. parade/common.sh).
 : "${PG_DATA_DIR:=${PWD}/postgres_data}"
-export PG_IMAGE PG_CONTAINER PG_PASSWORD PG_DATA_DIR
+# Mount PGDATA itself, NOT its parent: postgres:16-alpine declares
+# `VOLUME /var/lib/postgresql/data`, which wins over a bind mount of the parent --
+# the DB then silently lands in an anonymous volume on the small root disk.
+# The entrypoint chowns this mount to uid 70 and chmods 0700, so a later host-side
+# `chmod 777` hits EPERM; ./install resets the mode from a root container and
+# ./start tolerates the failure.
+: "${PG_CONTAINER_DATA_DIR:=/var/lib/postgresql/data}"
+export PG_IMAGE PG_CONTAINER PG_PASSWORD PG_DATA_DIR PG_CONTAINER_DATA_DIR
 
 # Public corpus bucket (cf. lib/download-otel-logs); ./load streams smoke scale's
 # first 100k rows over HTTPS via serened.

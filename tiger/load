@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Load the OTel-logs corpus into TigerData (hypertable) and build the BM25 + GIN
+# indexes. Postgres can't read parquet, so a serened container (embeds DuckDB)
+# reads it and streams rows over the PG wire via its postgres connector -- same
+# path as the ParadeDB and Postgres adapters:
+#   ATTACH '<conn>' (TYPE postgres); INSERT INTO pg.otel_logs SELECT ... FROM
+#   read_parquet(...)
+# The connector COPYs positionally over every column, so otel_logs must have no
+# STORED generated column. Phases: schema, ingest, analyze, indexes -- load_time
+# covers all of it.
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+# Parallel ingest: Postgres has no parallel DML, so one connection saturates one
+# core. See lib/pg-parallel-ingest.sh for the measured scaling curve; 1 = the old
+# single-stream behaviour.
+: "${TIGER_LOAD_JOBS:=16}"
+# Hypertable chunk count target; interval = corpus span / this.
+: "${TIGER_CHUNKS:=8}"
+source "$(dirname "$0")/../lib/pg-parallel-ingest.sh"
+
+PSQL_STOP=("${PSQL[@]}" -v ON_ERROR_STOP=1)
+log() { printf '%s\n' "$*" >&2; }
+
+# All 15 OTel columns (parquet lowercase -> snake_case), in create_table.sql
+# order. timestamp is TIMESTAMPTZ_NS -> TIMESTAMP_NS (drop tz) -> TIMESTAMP
+# (ns->us); corpus is UTC. Attribute maps -> JSONB via to_json(). The redundant
+# ms twin (timestamptime) is skipped.
+SELECT_PROJ="timestamp::TIMESTAMP_NS::TIMESTAMP, traceid, spanid, traceflags::INTEGER, severitytext, severitynumber::INTEGER, servicename, body, resourceschemaurl, to_json(resourceattributes), scopeschemaurl, scopename, scopeversion, to_json(scopeattributes), to_json(logattributes)"
+INSERT_COLS="timestamp, trace_id, span_id, trace_flags, severity_text, severity_number, service_name, body, resource_schema_url, resource_attributes, scope_schema_url, scope_name, scope_version, scope_attributes, log_attributes"
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob
+parquet=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#parquet[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+source_expr="read_parquet('${SEARCHBENCH_DATA_DIR}/part_*.parquet')"
+log "loading ${#parquet[@]} parquet file(s) from ${SEARCHBENCH_DATA_DIR}"
+
+# --- phase 1: schema (hypertable in one DDL) -----------------------------------
+# The chunk interval must be known before CREATE TABLE (the table declares itself
+# a hypertable inline; see create_table.sql). Interval = corpus span /
+# $TIGER_CHUNKS, from parquet metadata -- 0.4s even at 100M. date_diff has no
+# _NS overload, hence the cast chain.
+span_ms=$(serened_shell "COPY (SELECT greatest(1, date_diff('millisecond', min(timestamp)::TIMESTAMP_NS::TIMESTAMP, max(timestamp)::TIMESTAMP_NS::TIMESTAMP))::BIGINT FROM ${source_expr}) TO '/dev/stdout' (FORMAT csv);" \
+    2>/dev/null | tail -1 | tr -d '[:space:]') || true
+[[ "$span_ms" =~ ^[0-9]+$ ]] || { echo "could not read corpus time span (got '${span_ms}')" >&2; exit 1; }
+chunk_ms=$(( (span_ms + TIGER_CHUNKS - 1) / TIGER_CHUNKS ))
+log "[schema] creating extensions + otel_logs hypertable: corpus spans ${span_ms}ms -> ${TIGER_CHUNKS} chunks of ${chunk_ms}ms"
+"${PSQL_STOP[@]}" -v chunk_iv="${chunk_ms} milliseconds" -f create_table.sql
+
+# --- phase 2: ingest ($TIGER_LOAD_JOBS parallel streams) -----------------------
+# Mechanism, scaling curve and row-group-pruning notes: lib/pg-parallel-ingest.sh.
+log "[ingest] serened (parquet) --postgres connector--> tiger otel_logs"
+_t=$SECONDS
+pg_parallel_ingest "$TIGER_LOAD_JOBS" otel_logs "$INSERT_COLS" "$SELECT_PROJ"
+log "[ingest] took $((SECONDS - _t))s"
+
+# --- phase 3: analyze ---------------------------------------------------------
+# Fresh planner stats before the index builds.
+log "[analyze] VACUUM ANALYZE otel_logs"
+_t=$SECONDS
+"${PSQL_STOP[@]}" -c 'VACUUM ANALYZE otel_logs;'
+log "[analyze] took $((SECONDS - _t))s"
+
+# --- phase 4: index builds (foreground, so load_time == build wall-clock) ------
+log "[index] building BM25 (pg_textsearch) + tsvector GIN"
+_t=$SECONDS
+"${PSQL_STOP[@]}" -f create_index.sql
+log "[index] took $((SECONDS - _t))s"
+log "[index] done"
