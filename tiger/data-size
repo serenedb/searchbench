@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# On-disk bytes for dataset + indexes.
+# otel_logs is a hypertable, so the data lives in chunk tables under an internal
+# schema -- pg_total_relation_size on the root counts almost nothing (measured:
+# 56 KB for a 1.2 GB dataset). hypertable_detailed_size sums heap + TOAST + all
+# indexes across every chunk plus the root; fall back to pg_total_relation_size
+# for a plain table so the script also works pre-conversion. Analog to the
+# ParadeDB/Postgres adapters' data-size; all exclude WAL.
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+"${PSQL[@]}" -tA -c "
+SELECT CASE
+  WHEN EXISTS (SELECT 1 FROM timescaledb_information.hypertables
+               WHERE hypertable_name = 'otel_logs')
+  THEN (SELECT total_bytes FROM hypertable_detailed_size('public.otel_logs'))
+  ELSE COALESCE(pg_total_relation_size(to_regclass('public.otel_logs')), 0)
+END;" 2>/dev/null || echo 0

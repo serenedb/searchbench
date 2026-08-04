@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Start TigerData container (idempotent): serving->ensure extensions; stopped->
+# docker start; else fresh run.
+#
+# Extensions are ensured here too, not only in ./load, so query-only runs (which
+# skip ./load) still have them. Idempotent.
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+ensure_ext() {
+    local i
+    for i in $(seq 1 120); do
+        "${PSQL[@]}" -c 'SELECT 1' >/dev/null 2>&1 && break
+        sleep 1
+    done
+    "${PSQL[@]}" -v ON_ERROR_STOP=1 \
+        -c 'CREATE EXTENSION IF NOT EXISTS pg_textsearch;' \
+        -c 'CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;' >/dev/null
+}
+
+# Already serving -> ensure extensions.
+if "${PSQL[@]}" -c 'SELECT 1' >/dev/null 2>&1; then
+    ensure_ext
+    exit 0
+fi
+
+# Stopped container exists -> restart in place so the data dir/index survive the
+# driver's cold cycle (stop -> drop_caches -> start).
+if docker ps -a --format '{{.Names}}' | grep -qx "$TIGER_CONTAINER"; then
+    docker start "$TIGER_CONTAINER" >/dev/null
+    ensure_ext
+    exit 0
+fi
+
+# Fresh spawn.
+#   * --network host (no NAT) matches the other adapters for comparable latency;
+#     it ignores -p, so Postgres listens on $PGPORT via `-c port=`.
+#   * pg_textsearch MUST be in shared_preload_libraries (it registers a custom
+#     AM + background state); timescaledb is kept in the list because the image
+#     preloads it by default and dropping it would disable TimescaleDB.
+#   * Bind-mount under /mnt/data (see common.sh). The image runs as uid
+#     $TIGER_UID and does NOT chown the mount, so 0777 on the mount parent lets
+#     initdb create PGDATA (pgdata/data) inside it.
+#   * Worker/WAL settings mirror parade/start: parallel index build + fewer
+#     checkpoint stalls during ingest.
+mkdir -p "$TIGER_DATA_DIR"
+chmod 777 "$TIGER_DATA_DIR"
+# Parallel-query dynamic shared memory lives in /dev/shm, which Docker defaults to
+# 64 MB -- but each parallel worker wants a ~48 MB DSM segment, so at 100M the
+# self-joins died with "could not resize shared memory segment ... No space left
+# on device" (shared memory, not disk). 2 GB covers 16 workers.
+: "${TIGER_SHM_SIZE:=2g}"
+
+docker run -d \
+    --name "$TIGER_CONTAINER" \
+    --network host \
+    --shm-size="${TIGER_SHM_SIZE}" \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_DB=postgres \
+    -e POSTGRES_HOST_AUTH_METHOD=trust \
+    -v "${TIGER_DATA_DIR}:${TIGER_CONTAINER_DATA_DIR}" \
+    "$TIGER_IMAGE" \
+    -c port="${PGPORT}" \
+    -c shared_preload_libraries=timescaledb,pg_textsearch \
+    -c max_worker_processes=16 \
+    -c max_parallel_workers=16 \
+    -c max_parallel_maintenance_workers=8 \
+    -c max_wal_size=8GB >/dev/null
+ensure_ext

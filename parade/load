@@ -46,6 +46,7 @@ log "[schema] creating pg_search extension + otel_logs table"
 "${PSQL_STOP[@]}" -f create_table.sql
 
 # --- phase 2: ingest (serened read_parquet -> ParadeDB via postgres connector) -
+# TODO: use pg_parallel_ingest
 # SINGLE stream, deliberately: parallelizing INSERT across N serened procs was a
 # net loss (insert isn't the bottleneck; N streams add startups + redundant
 # decode + heap/WAL contention). Dominant cost is BM25 CREATE INDEX, which IS

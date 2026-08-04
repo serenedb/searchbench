@@ -32,13 +32,22 @@ fi
 # --network host ignores -p, so Postgres listens on $PGPORT via `-c port=`. Data on host
 # bind-mount (see common.sh); image runs as root and chowns PGDATA on init, 777 ensures it can.
 mkdir -p "$PG_DATA_DIR"
-chmod 777 "$PG_DATA_DIR"
+# Tolerated: after a previous run the dir is owned by the container's uid, so the
+# host user cannot chmod it -- and need not, it is already container-writable.
+# Without `|| true` this aborted ./start under `set -e`.
+chmod 777 "$PG_DATA_DIR" 2>/dev/null || true
+# Parallel-query dynamic shared memory lives in /dev/shm, which Docker defaults to
+# 64 MB; each parallel worker wants ~48 MB, so at 100M queries died with "could
+# not resize shared memory segment" (shared memory, not disk). 2 GB is ample.
+: "${PG_SHM_SIZE:=2g}"
+
 docker run -d \
     --name "$PG_CONTAINER" \
     --network host \
+    --shm-size="${PG_SHM_SIZE}" \
     -e POSTGRES_USER=postgres \
     -e POSTGRES_DB=postgres \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
-    -v "${PG_DATA_DIR}:/var/lib/postgresql/data" \
+    -v "${PG_DATA_DIR}:${PG_CONTAINER_DATA_DIR}" \
     "$PG_IMAGE" -c port="${PGPORT}" >/dev/null
 ensure_ext

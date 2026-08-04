@@ -12,7 +12,9 @@ docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
 # Wipe bind-mount dir: Postgres owns it as its own uid (host rm hits EPERM), so
 # clear via throwaway root container. Also drop stale named volume from old layout.
 docker volume rm -f searchbench-postgres-data >/dev/null 2>&1 || true
+# Reset the dir's own mode too: initdb leaves PGDATA 0700 owned by the image's
+# uid, so a host-side chmod fails with EPERM -- root in the container can fix it.
 if [[ -d "$PG_DATA_DIR" ]]; then
-    docker run --rm -v "${PG_DATA_DIR}:/data" --entrypoint sh alpine \
-        -c 'rm -rf /data/..?* /data/.[!.]* /data/* 2>/dev/null' >/dev/null 2>&1 || true
+    docker run --rm --log-driver none -v "${PG_DATA_DIR}:/data" --entrypoint sh alpine \
+        -c 'rm -rf /data/..?* /data/.[!.]* /data/* 2>/dev/null; chmod 777 /data' >/dev/null 2>&1 || true
 fi
