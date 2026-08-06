@@ -29,9 +29,11 @@ second terminal.
 |---|---|---|
 | `SERENED_IMAGE` | `serenedb/serenedb:26.07.5` | serened image used as parquet reader |
 | `PGPORT` | `5456` | host port (5455 is SereneDB's) |
-| `PARADE_IMAGE` | `paradedb/paradedb:0.24.1` | image tag (pinned; provides the `simple` tokenizer / `pdb.simple` cast used by `create_index.sql`) |
+| `PARADE_IMAGE` | `paradedb/paradedb:0.24.1` | pg_search 0.24.1 on PG 18.4 (pinned; 0.25.0 regressed the custom-scan path 7-8x, see `common.sh`) |
 | `PARADE_CONTAINER` | `searchbench-paradedb` | container name |
 | `PARADE_DATA_DIR` | `$PWD/paradedb_data` | host bind-mount data dir; wiped by `./install` |
+| `PARADE_LOAD_JOBS` | `16` | parallel ingest streams |
+| `PG_TUNE_*` | see [`../lib/pg-tuning.sh`](../lib/pg-tuning.sh) | server tuning shared by all Postgres-wire adapters (shared_buffers, work_mem, parallelism, /dev/shm) |
 
 Schema in [`create_table.sql`](create_table.sql) +
 [`create_index.sql`](create_index.sql); workload in

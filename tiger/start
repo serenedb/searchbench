@@ -6,6 +6,7 @@
 # skip ./load) still have them. Idempotent.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/../lib/pg-tuning.sh"
 
 ensure_ext() {
     local i
@@ -45,16 +46,10 @@ fi
 #     checkpoint stalls during ingest.
 mkdir -p "$TIGER_DATA_DIR"
 chmod 777 "$TIGER_DATA_DIR"
-# Parallel-query dynamic shared memory lives in /dev/shm, which Docker defaults to
-# 64 MB -- but each parallel worker wants a ~48 MB DSM segment, so at 100M the
-# self-joins died with "could not resize shared memory segment ... No space left
-# on device" (shared memory, not disk). 2 GB covers 16 workers.
-: "${TIGER_SHM_SIZE:=2g}"
-
 docker run -d \
     --name "$TIGER_CONTAINER" \
     --network host \
-    --shm-size="${TIGER_SHM_SIZE}" \
+    --shm-size="${PG_TUNE_SHM_SIZE}" \
     -e POSTGRES_USER=postgres \
     -e POSTGRES_DB=postgres \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
@@ -62,8 +57,5 @@ docker run -d \
     "$TIGER_IMAGE" \
     -c port="${PGPORT}" \
     -c shared_preload_libraries=timescaledb,pg_textsearch \
-    -c max_worker_processes=16 \
-    -c max_parallel_workers=16 \
-    -c max_parallel_maintenance_workers=8 \
-    -c max_wal_size=8GB >/dev/null
+    "${PG_TUNE_FLAGS[@]}" >/dev/null
 ensure_ext

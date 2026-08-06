@@ -34,9 +34,11 @@ container (`SERENED_IMAGE`, default `serenedb/serenedb:26.07.5`).
 | `SERENED_IMAGE` | `serenedb/serenedb:26.07.5` | serened image used as parquet reader |
 | `SEARCHBENCH_DATA_DIR` | — | root data directory (required, no default) |
 | `PGPORT` | `5457` | host port (avoids 5455/SereneDB + 5456/Parade) |
-| `PG_IMAGE` | `postgres:16-alpine` | image |
+| `PG_IMAGE` | `postgres:18-alpine` | image |
 | `PG_CONTAINER` | `searchbench-postgres` | container |
 | `PG_DATA_DIR` | `$PWD/postgres_data` | host bind-mount data dir; wiped by `./install` |
+| `PG_LOAD_JOBS` | `16` | parallel ingest streams |
+| `PG_TUNE_*` | see [`../lib/pg-tuning.sh`](../lib/pg-tuning.sh) | server tuning shared by all Postgres-wire adapters (shared_buffers, work_mem, parallelism, /dev/shm) |
 
 Schema in [`create_table.sql`](create_table.sql) +
 [`create_index.sql`](create_index.sql); workload in

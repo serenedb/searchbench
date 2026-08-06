@@ -46,12 +46,12 @@ edits, so an alternation over them cannot produce a false negative.
 |---|---|---|
 | `SERENED_IMAGE` | `serenedb/serenedb:26.07.5` | parquet reader |
 | `PGPORT` | `5458` | host port |
-| `TIGER_IMAGE` | `timescale/timescaledb-ha:pg17.10-ts2.29.0` | PG 17.10 / TS 2.29.0 / pg_textsearch 1.3.0 |
+| `TIGER_IMAGE` | `timescale/timescaledb-ha:pg18.4-ts2.29.1-all` | PG 18.4 / TS 2.29.1 / pg_textsearch 1.3.0 |
 | `TIGER_CONTAINER` | `searchbench-tiger` | container name |
 | `TIGER_DATA_DIR` | `$PWD/tiger_data` | bind-mount data dir; wiped by `./install` |
 | `TIGER_CHUNKS` | `8` | hypertable chunk-count target |
 | `TIGER_LOAD_JOBS` | `16` | parallel ingest streams |
-| `TIGER_SHM_SIZE` | `2g` | `/dev/shm`; the 64 MB default breaks parallel joins |
+| `PG_TUNE_*` | see [`../lib/pg-tuning.sh`](../lib/pg-tuning.sh) | server tuning shared by all Postgres-wire adapters (shared_buffers, work_mem, parallelism, /dev/shm) |
 
 `pg_textsearch` must be in `shared_preload_libraries`; [`start`](start) passes
 `-c shared_preload_libraries=timescaledb,pg_textsearch`.

@@ -2,6 +2,7 @@
 # Start ParadeDB container (idempotent): serving->noop; stopped->docker start; else fresh run
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/../lib/pg-tuning.sh"
 
 # Already serving?
 if "${PSQL[@]}" -c 'SELECT 1' >/dev/null 2>&1; then
@@ -23,12 +24,9 @@ chmod 777 "$PARADE_DATA_DIR"
 docker run -d \
     --name "$PARADE_CONTAINER" \
     --network host \
+    --shm-size="${PG_TUNE_SHM_SIZE}" \
     -e POSTGRES_USER=postgres \
     -e POSTGRES_DB=postgres \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
     -v "${PARADE_DATA_DIR}:/var/lib/postgresql/" \
-    "$PARADE_IMAGE" -c port="${PGPORT}" \
-    -c max_worker_processes=16 \
-    -c max_parallel_workers=16 \
-    -c max_parallel_maintenance_workers=8 \
-    -c max_wal_size=8GB >/dev/null
+    "$PARADE_IMAGE" -c port="${PGPORT}" "${PG_TUNE_FLAGS[@]}" >/dev/null

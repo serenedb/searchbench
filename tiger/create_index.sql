@@ -31,8 +31,11 @@
 --   * pg_trgm GIN on body -- fuzzy d<=1 2.2->1.3s but d<=2 WORSE (4.9->6.7s),
 --     mixed on the regex queries, +141 MB and a 17s build.
 
-SET max_parallel_maintenance_workers = 8;
-SET maintenance_work_mem = '2GB';
+-- Build settings (max_parallel_maintenance_workers, maintenance_work_mem) are
+-- set server-side from lib/pg-tuning.sh, the single source of truth shared by the
+-- postgres/parade/tiger adapters. Deliberately NOT re-SET here: a session SET
+-- silently overrides the server value, which is exactly the drift that made these
+-- two disagree before.
 
 CREATE INDEX otel_logs_bm25 ON otel_logs USING bm25 (body) WITH (text_config = 'simple');
 
