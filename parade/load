@@ -10,6 +10,10 @@
 # covers parquet read + transfer + index build.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+# Parallel ingest: Postgres has no parallel DML, so one connection saturates one
+# core. Scaling curve: lib/pg-parallel-ingest.sh. 1 = single stream.
+: "${PARADE_LOAD_JOBS:=16}"
+source "$(dirname "$0")/../lib/pg-parallel-ingest.sh"
 
 : "${SEARCHBENCH_DATASET:=otel_logs_1b}"
 : "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
@@ -24,10 +28,13 @@ log() { printf '%s\n' "$*" >&2; }
 #   * attribute maps JSON-serialized via to_json() into JSONB columns.
 #   * redundant ms twin (timestamptime) not selected.
 # SELECT_PROJ and INSERT_COLS order must match create_table.sql (all 15 cols).
-# id (row_number()) first: connector COPYs positionally over ALL columns, so a
-# col omitted from INSERT_COLS lands NULL not server-generated -- hence id is a
-# plain NOT NULL BIGINT filled here, not GENERATED IDENTITY.
-SELECT_PROJ="row_number() OVER (), timestamp::TIMESTAMP_NS::TIMESTAMP, traceid, spanid, traceflags::INTEGER, severitytext, severitynumber::INTEGER, servicename, body, resourceschemaurl, to_json(resourceattributes), scopeschemaurl, scopename, scopeversion, to_json(scopeattributes), to_json(logattributes)"
+# id (file_row_number) first: unique across parallel ingest streams by
+# construction (row_number() OVER () restarts at 1 in each stream, duplicating
+# the BM25 key_field) and needs no window operator. Connector COPYs positionally
+# over ALL columns, so a col omitted from INSERT_COLS lands NULL not
+# server-generated -- hence id is a plain NOT NULL BIGINT filled here, not
+# GENERATED IDENTITY.
+SELECT_PROJ="file_row_number, timestamp::TIMESTAMP_NS::TIMESTAMP, traceid, spanid, traceflags::INTEGER, severitytext, severitynumber::INTEGER, servicename, body, resourceschemaurl, to_json(resourceattributes), scopeschemaurl, scopename, scopeversion, to_json(scopeattributes), to_json(logattributes)"
 INSERT_COLS="id, timestamp, trace_id, span_id, trace_flags, severity_text, severity_number, service_name, body, resource_schema_url, resource_attributes, scope_schema_url, scope_name, scope_version, scope_attributes, log_attributes"
 
 # Local part_*.parquet from download step (sliced part_000 for smoke, else full).
@@ -46,24 +53,12 @@ log "[schema] creating pg_search extension + otel_logs table"
 "${PSQL_STOP[@]}" -f create_table.sql
 
 # --- phase 2: ingest (serened read_parquet -> ParadeDB via postgres connector) -
-# TODO: use pg_parallel_ingest
-# SINGLE stream, deliberately: parallelizing INSERT across N serened procs was a
-# net loss (insert isn't the bottleneck; N streams add startups + redundant
-# decode + heap/WAL contention). Dominant cost is BM25 CREATE INDEX, which IS
-# parallelized (see create_index.sql + parade/start worker limits).
+# $PARADE_LOAD_JOBS parallel streams; mechanism, measured scaling curve and
+# row-count verification live in lib/pg-parallel-ingest.sh.
 log "[ingest] serened (parquet) --postgres connector--> ParadeDB otel_logs"
-insert_sql="
-ATTACH 'host=${PGHOST} port=${PGPORT} dbname=${PGDATABASE} user=${PGUSER}' AS pg (TYPE postgres);
-INSERT INTO pg.otel_logs (${INSERT_COLS})
-SELECT ${SELECT_PROJ} FROM ${source_expr}${limit_clause};
-"
 _t=$SECONDS
-serened_shell "$insert_sql"
+pg_parallel_ingest "$PARADE_LOAD_JOBS" otel_logs "$INSERT_COLS" "$SELECT_PROJ"
 log "[ingest] took $((SECONDS - _t))s"
-
-rows=$("${PSQL[@]}" -tA -c 'SELECT count(*) FROM otel_logs' 2>/dev/null | tr -d '[:space:]')
-[[ "${rows:-0}" -gt 0 ]] || { echo "otel_logs is empty after INSERT" >&2; exit 1; }
-log "[ingest] otel_logs row count: ${rows}"
 
 # Fresh planner stats before index build (matches ClickBench paradedb adapter).
 log "[analyze] VACUUM ANALYZE otel_logs"

@@ -19,7 +19,7 @@ CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
 DROP TABLE IF EXISTS otel_logs CASCADE;
 
 -- HYPERTABLE, declared inline via WITH (tsdb.*) -- the form the docs prefer over
--- a follow-up create_hypertable() call (2.23.0+; image ships 2.29.0).
+-- a follow-up create_hypertable() call (2.23.0+).
 -- :chunk_iv comes from ./load as `psql -v chunk_iv='<n> milliseconds'`, n =
 -- corpus span / $TIGER_CHUNKS from parquet metadata: the span scales with the
 -- dataset (1.77s at 1M, minutes at 1B) so no fixed interval fits every scale.
@@ -29,22 +29,17 @@ DROP TABLE IF EXISTS otel_logs CASCADE;
 -- exit (Q48 2.3s->0.015s); top-K pays a small Merge Append cost (0.007->0.012s).
 --
 -- ROWSTORE, not columnstore. Docs: "Once chunks are converted to the columnstore,
--- regular B-tree indexes don't apply" -- only sparse indexes (minmax/bloom/
--- firstlast) remain, which skip whole ~1000-row batches but cannot locate rows
--- containing a term. Measured: converting drops every chunk index, BM25 top-K
--- becomes impossible ("no BM25 index found"), GIN counts 0.08->1.66s, histograms
--- 0.08->5.9s. Re-creating indexes after conversion "succeeds" but builds empty
--- ones (16 kB vs 56 MB) -- the rows live in a separate _compressed relation with
--- ~1000 packed per stored row, so there are no per-row TIDs to index. The 2.18
--- "indexes in the columnstore" feature does not help: B-tree/hash only, and its
--- hypercore TAM was removed in 2.22 (verified: no such access method here).
--- Columnstore would win 22x on size and 5.5x on text-free aggregates, of which
--- this workload has none.
+-- regular B-tree indexes don't apply"; only sparse indexes (minmax/bloom/
+-- firstlast) remain, and those skip ~1000-row batches rather than locating rows.
+-- Measured: conversion drops every chunk index, BM25 top-K becomes impossible,
+-- GIN counts 0.08->1.66s, histograms 0.08->5.9s. Rebuilding indexes afterwards
+-- "succeeds" but yields empty ones (16 kB vs 56 MB). The 2.18 columnstore-index
+-- feature was B-tree/hash only and its hypercore TAM was removed in 2.22.
+-- See ../OPTIMIZATIONS.md.
 --
--- Accepted caveat: pg_textsearch keeps corpus stats per relation, so each chunk's
--- BM25 index normalises over its own ~1/8 -- absolute scores shift ~1-2% and
--- members of a large tie class can swap at the LIMIT boundary. Every returned row
--- is a true match. A time-drifting corpus could reorder more; this one does not.
+-- Accepted caveat: pg_textsearch keeps corpus stats per relation, so each chunk
+-- normalises over its own ~1/8: scores shift 1-2% and members of a large tie class
+-- can swap at the LIMIT boundary. Every returned row is still a true match.
 -- `timestamp` is NOT NULL as the partition column.
 CREATE TABLE otel_logs (
     timestamp           TIMESTAMP NOT NULL,

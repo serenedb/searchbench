@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS otel_logs CASCADE;
 -- identify rows. It is a plain BIGINT row id (NOT a PRIMARY KEY -- pg_search
 -- only needs uniqueness, and we deliberately keep no primary key so the table
 -- is just row-id-keyed).
--- ./load supplies it explicitly via row_number() OVER () in the SELECT; it is
+-- ./load supplies it explicitly via file_row_number in the SELECT; it is
 -- NOT a GENERATED IDENTITY, because serened's DuckDB->Postgres connector does a
 -- positional, all-columns COPY and ships a NULL for any column omitted from the
 -- INSERT list (violating NOT NULL) instead of letting the server generate it.
