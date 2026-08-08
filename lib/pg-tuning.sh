@@ -47,10 +47,11 @@
 : "${PG_TUNE_MAX_WAL_SIZE:=8GB}"
 
 # --- container ----------------------------------------------------------------
-# /dev/shm, for the DYNAMIC shared memory parallel workers allocate per query
-# (not shared_buffers). Docker's 64 MB default vs ~48 MB per worker took out 48 of
-# 92 queries at 100M with "could not resize shared memory segment".
-: "${PG_TUNE_SHM_SIZE:=8g}"
+# /dev/shm, for the DYNAMIC shared memory parallel queries allocate (not
+# shared_buffers; host `df` cannot see it). A parallel hash table is bounded by
+# work_mem x (per_gather+1) = 6.2 GiB, so Docker's 64 MB default and even 8g
+# overflow at scale. A ceiling, not a reservation: tmpfs allocates lazily.
+: "${PG_TUNE_SHM_SIZE:=24g}"
 
 # Splice into docker run after the image name:
 #   "$IMAGE" -c port="${PGPORT}" "${PG_TUNE_FLAGS[@]}"

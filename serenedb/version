@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Print the SereneDB version; "unknown" on failure.
+# From the live server: version() reports "PostgreSQL <pg> (SereneDB <ver>)", so
+# take what's in the parens -- unlike the image tag, that is what actually ran.
+# (`serened --version` is no help: it only prints "serened".)
+set -euo pipefail
+: "${PGHOST:=127.0.0.1}"
+: "${PGPORT:=5499}"
+: "${PGUSER:=postgres}"
+: "${PGDATABASE:=postgres}"
+
+# regexp_match, not substring(x from 'pat'): the engine reads that as the
+# positional form and rejects the pattern as an INT64.
+v=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -tA \
+        -c "SELECT (regexp_match(version(), 'SereneDB ([^)]+)'))[1];" 2>/dev/null \
+        | tr -d '[:space:]') || v=""
+echo "${v:-unknown}"

@@ -1,6 +1,6 @@
 {
   "system": "SereneDB",
-  "version": "unknown",
+  "version": "26.07.5",
   "os": "Ubuntu 24.04.4 LTS",
   "date": "2026-07-29",
   "dataset": "otel_logs_1b",
