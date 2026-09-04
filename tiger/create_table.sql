@@ -28,14 +28,18 @@ DROP TABLE IF EXISTS otel_logs CASCADE;
 -- (count 0.127->0.075s vs a plain heap) and time-ordered LIMIT queries an early
 -- exit (Q48 2.3s->0.015s); top-K pays a small Merge Append cost (0.007->0.012s).
 --
--- ROWSTORE, not columnstore. Docs: "Once chunks are converted to the columnstore,
--- regular B-tree indexes don't apply"; only sparse indexes (minmax/bloom/
--- firstlast) remain, and those skip ~1000-row batches rather than locating rows.
--- Measured: conversion drops every chunk index, BM25 top-K becomes impossible,
--- GIN counts 0.08->1.66s, histograms 0.08->5.9s. Rebuilding indexes afterwards
--- "succeeds" but yields empty ones (16 kB vs 56 MB). The 2.18 columnstore-index
--- feature was B-tree/hash only and its hypercore TAM was removed in 2.22.
--- See ../OPTIMIZATIONS.md.
+-- ROWSTORE hypertable. ../tiger-columnstore/create_table.sql is the mirror of
+-- this file that declares the columnstore instead, so a schema change has to land
+-- in both. Rowstore is this adapter's storage because it is the only one the text
+-- indexes work on. Docs: "Once chunks are converted to the columnstore, regular
+-- B-tree indexes don't apply"; only sparse indexes (minmax/bloom/firstlast)
+-- remain, and those skip ~1000-row batches rather than locating rows. Measured:
+-- conversion drops every chunk index, BM25 top-K becomes impossible, GIN counts
+-- 0.08->1.66s, histograms 0.08->5.9s, and rebuilding indexes afterwards
+-- "succeeds" while yielding empty ones (16 kB vs 56 MB) -- re-confirmed on 2.29.2
+-- in ../tiger-columnstore/create_index.sql, where a rebuilt BM25 index returned 0
+-- rows. The 2.18 columnstore-index feature was B-tree/hash only and its hypercore
+-- TAM was removed in 2.22.
 --
 -- Accepted caveat: pg_textsearch keeps corpus stats per relation, so each chunk
 -- normalises over its own ~1/8: scores shift 1-2% and members of a large tie class

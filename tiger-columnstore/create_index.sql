@@ -1,0 +1,63 @@
+-- Second half of this adapter's delta against ../tiger (the first is
+-- create_table.sql, which declares the columnstore). Where
+-- tiger/create_index.sql builds a BM25 index and a tsvector GIN index over heap
+-- chunks, this converts every chunk to the columnstore instead.
+-- ./load is symlinked from ../tiger and runs this in the same phase-4 slot, so
+-- load_time covers the conversion exactly as it covers tiger's index builds.
+--
+-- NO SECONDARY INDEX SURVIVES THE CONVERSION, and that is the measurement rather
+-- than a misconfiguration. Converting a chunk drops its indexes; only the
+-- columnstore's own sparse indexes (minmax / bloom / firstlast) remain, and those
+-- skip ~1000-row batches rather than locating rows. The hypercore table access
+-- method -- the one form that carried B-tree indexes over columnstore chunks --
+-- shipped in 2.18 and was removed in 2.22, so on 2.29.2 there is no configuration
+-- in which a BM25 or GIN index answers a query over a columnstore chunk. Every
+-- text predicate in queries.sql therefore decompresses and filters: slow, but
+-- correct.
+--
+-- The columnstore CONFIG (enable_columnstore, segmentby, orderby) is not here --
+-- it is a table property and is declared inline in create_table.sql. This file
+-- only does what must happen after the rows land: convert the chunks, and then
+-- deliberately build nothing.
+
+-- Convert every chunk. compress_chunk() and convert_to_columnstore() are the same
+-- C function (ts_compress_chunk) under two names, but the columnstore-era name is
+-- a PROCEDURE -- it needs a top-level CALL per chunk and cannot be driven from a
+-- SELECT or hosted in a DO block, because it commits internally. The function
+-- form takes a set, so one statement converts the lot.
+-- if_not_compressed defaults to true, making a re-run a no-op.
+SELECT count(*) AS chunks_converted
+FROM (SELECT compress_chunk(c) FROM show_chunks('otel_logs') c) s;
+
+-- NO INDEX IS CREATED HERE, and that is a measured decision rather than a
+-- stylistic one.
+--
+-- CREATE INDEX on a fully-converted hypertable does not fail -- it "succeeds" and
+-- indexes nothing, because the rows now live in an internal compressed relation
+-- while the chunk the index is attached to is empty. Measured at 1M, with the
+-- BM25 index created here exactly as the rowstore adapter creates it:
+--
+--   Q33 (top-K, `<@>` on a term)     rowstore: 100 rows in 0.017s
+--                                 columnstore:   0 rows in 13.2s
+--
+-- Zero rows, no error. Every row scores 0.0 for want of corpus statistics, so the
+-- `(body <@> q) < 0` guard filters the whole result away -- and in the Q36-Q45
+-- shapes, where a tsquery does the filtering and `<@>` only ranks, all-zero scores
+-- turn ORDER BY into one big tie and LIMIT 100 returns an arbitrary slice. Fast,
+-- silent and wrong is the worst outcome a benchmark can publish, so the index is
+-- left out.
+--
+-- The consequence is deliberate and visible: queries.sql resolves the index BY
+-- NAME (`to_bm25query('charge', 'otel_logs_bm25')`), so with no index of that name
+-- Q33-Q45 and Q51-Q53 fail outright. The driver records them as errors and the UI
+-- shows them as gaps -- the same way it shows any query an engine cannot answer.
+-- That is the honest report: pg_textsearch's BM25 index has no implementation over
+-- columnstore chunks. The remaining 76 queries return results identical to the
+-- rowstore adapter's, just slower.
+--
+-- The tsvector GIN index is left out for the same reason, and it does not even
+-- need the name argument: nothing in queries.sql references it, so its absence
+-- costs a plan, not a parse. Q01-Q32 and Q54-Q92 decompress and filter, correctly.
+
+-- Conversion rewrote every chunk, so the planner needs fresh stats.
+ANALYZE otel_logs;

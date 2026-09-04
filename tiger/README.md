@@ -40,13 +40,22 @@ Fuzzy queries (Q22-24, Q48-49, Q59) have no index path and seq-scan behind a
 pigeonhole prefilter: with the pattern split into d+1 parts, one part survives d
 edits, so an alternation over them cannot produce a false negative.
 
+## Columnstore
+
+This adapter is the **rowstore** one, because rowstore chunks are the only storage
+the text indexes work on. [`../tiger-columnstore`](../tiger-columnstore) is the
+same adapter over TimescaleDB's columnstore: it symlinks every script here and
+differs only in `create_table.sql` (which declares the columnstore) and
+`create_index.sql` (which converts the chunks instead of building indexes). It
+runs on its own port with its own data dir, so both can stay loaded at once.
+
 ## Env
 
 | Var | Default | Meaning |
 |---|---|---|
 | `SERENED_IMAGE` | `serenedb/serenedb:26.07.5` | parquet reader |
 | `PGPORT` | `5458` | host port |
-| `TIGER_IMAGE` | `timescale/timescaledb-ha:pg18.4-ts2.29.1-all` | PG 18.4 / TS 2.29.1 / pg_textsearch 1.3.0 |
+| `TIGER_IMAGE` | `timescale/timescaledb-ha:pg18.4-ts2.29.2-all` | PG 18.4 / TS 2.29.2 / pg_textsearch 1.4.0 |
 | `TIGER_CONTAINER` | `searchbench-tiger` | container name |
 | `TIGER_DATA_DIR` | `$PWD/tiger_data` | bind-mount data dir; wiped by `./install` |
 | `TIGER_CHUNKS` | `8` | hypertable chunk-count target |
