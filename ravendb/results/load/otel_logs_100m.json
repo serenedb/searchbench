@@ -1,0 +1,11 @@
+{
+  "engine": "RavenDB",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "7.2.5",
+  "load_time": 2339.521,
+  "data_size": 74625187840,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-08-13",
+  "loaded_by": "queries.rql"
+}

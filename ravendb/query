@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Run one RavenDB query; timing on stderr.
+#
+# stdin = one RQL statement. stdout = result rows. stderr last line = curl
+# %{time_total} secs: client round-trip, comparable across engines.
+#
+# Three response shapes are flattened to rows:
+#   * count      -> `limit 0`, so Results is empty and TotalResults is the answer
+#   * facets     -> Results[].Values[] ({Range, Count}), the terms-agg equivalent
+#   * hits       -> Results[] documents
+#
+# A query line may instead be `UNSUPPORTED: <reason>` from translate.py, for the
+# constructs RQL has no form for. Those exit non-zero so lib/benchmark.sh records
+# a null latency and logs the reason rather than timing a substituted question.
+set -euo pipefail
+
+: "${RAVEN_PORT:=8080}"
+: "${RAVEN_DB:=otel_logs}"
+R="http://127.0.0.1:${RAVEN_PORT}"
+
+q=$(cat)
+
+if [[ "$q" == UNSUPPORTED:* ]]; then
+    echo "${q#UNSUPPORTED: }" >&2
+    exit 3
+fi
+
+body=$(python3 -c 'import json,sys;print(json.dumps({"Query":sys.stdin.read()}))' <<<"$q")
+
+resp=$(curl -fsS -w '\n%{time_total}' -X POST "$R/databases/${RAVEN_DB}/queries" \
+    -H 'Content-Type: application/json' --data-binary "$body")
+rt=$(printf '%s\n' "$resp" | tail -n1)
+payload=$(printf '%s\n' "$resp" | sed '$d')
+
+printf '%s' "$payload" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+res = d.get("Results") or []
+# facet response: a list of {Name, Values:[{Range, Count}]}
+if res and isinstance(res[0], dict) and "Values" in res[0] and "Name" in res[0]:
+    for f in res:
+        for v in f.get("Values", []):
+            print(json.dumps({"key": v.get("Range"), "doc_count": v.get("Count")}))
+elif res:
+    for r in res:
+        r.pop("@metadata", None)
+        print(json.dumps(r))
+else:
+    print(d.get("TotalResults", 0))
+'
+printf '%s\n' "$rt" >&2

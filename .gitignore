@@ -43,6 +43,8 @@ elastic-columnar/es-smoke/
 cratedb/crate_data/
 
 
+ravendb/raven-data/
+ravendb/license.json
 
 
 meilisearch/meili-data/

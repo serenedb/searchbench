@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Exit 0 when RavenDB answers on $RAVEN_PORT; non-zero otherwise.
+set -euo pipefail
+: "${RAVEN_PORT:=8080}"
+curl -fsS --max-time 3 "http://127.0.0.1:${RAVEN_PORT}/build/version" >/dev/null 2>&1

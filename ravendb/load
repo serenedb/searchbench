@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Recreate the database + Corax full-text index and bulk-ingest the parquet corpus.
+#
+# RavenDB indexes ASYNCHRONOUSLY: bulk_docs returns as soon as the documents are
+# durable, and the index catches up in the background. A query against a stale
+# index still answers, just from an incomplete view -- so the load is not
+# finished until IsStale goes false, and that wait is part of load_time. This is
+# the same accounting as the ES adapters charging refresh+flush to the load.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${RAVEN_PORT:=8080}"
+: "${RAVEN_DB:=otel_logs}"
+R="http://127.0.0.1:${RAVEN_PORT}"
+
+if [[ "${SEARCHBENCH_SKIP_LOAD:-no}" == "yes" ]]; then
+    echo "[load] SEARCHBENCH_SKIP_LOAD=yes, leaving database as-is"
+    exit 0
+fi
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] \
+  || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob
+files=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#files[@]} -gt 0 ]] \
+  || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+./apply-license || true
+
+echo "[load] recreating database ${RAVEN_DB}"
+curl -fsS -X DELETE "$R/admin/databases?name=${RAVEN_DB}&hard-delete=true" \
+     -H 'Content-Type: application/json' -d '{"DatabaseNames":["'"${RAVEN_DB}"'"],"HardDelete":true}' \
+     >/dev/null 2>&1 || true
+sleep 2
+curl -fsS -X PUT "$R/admin/databases?name=${RAVEN_DB}&replicationFactor=1" \
+     -H 'Content-Type: application/json' \
+     -d '{"DatabaseName":"'"${RAVEN_DB}"'","Settings":{},"Disabled":false,"Encrypted":false,"Topology":{"DynamicNodesDistribution":false}}' \
+     >/dev/null
+
+# Document compression, enabled BEFORE any write because it applies to documents
+# as they are stored (existing ones only compress on compaction).
+#
+# Off by default in RavenDB, on by default in every other engine here (ES/OS
+# LZ4, CrateDB best_compression, VictoriaLogs zstd), so leaving it off would
+# have been the unfair setting rather than the neutral one. Measured at 1M:
+# 3.22 GB -> 1.61 GB, exactly 50%, with load+index time 51s -> 43s. It costs
+# nothing on the write path.
+echo "[load] enabling document compression for the Logs collection"
+curl -fsS -X POST "$R/databases/${RAVEN_DB}/admin/documents-compression/config" \
+     -H 'Content-Type: application/json' \
+     -d '{"Collections":["Logs"],"CompressAllCollections":true,"CompressRevisions":false}' \
+     >/dev/null
+
+# Static index. Body is the analyzed full-text field (Indexing=Search, which
+# lowercases and splits on non-alphanumerics -- verified to match the reference
+# analyzer, including splitting on '_'). The other fields are indexed exact so
+# term/range/sort predicates and facets resolve from the index.
+echo "[load] creating Corax index Logs/Search"
+curl -fsS -X PUT "$R/databases/${RAVEN_DB}/admin/indexes" -H 'Content-Type: application/json' -d '{
+ "Indexes":[{
+  "Name":"Logs/Search",
+  "Maps":["from doc in docs.Logs select new { doc.Body, doc.ServiceName, doc.Timestamp, doc.SeverityText, doc.SeverityNumber, doc.ScopeName }"],
+  "Fields":{"Body":{"Indexing":"Search"}},
+  "Configuration":{"Indexing.Static.SearchEngineType":"Corax"}
+ }]}' >/dev/null
+
+RAVEN_URL="$R" RAVEN_DB="$RAVEN_DB" "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py \
+    --local-dir "$SEARCHBENCH_DATA_DIR" \
+    --files "${#files[@]}"
+
+# Wait out the asynchronous index build -- see header.
+echo "[load] waiting for Logs/Search to stop being stale"
+t0=$(date +%s)
+while :; do
+    read -r stale entries <<<"$(curl -fsS "$R/databases/${RAVEN_DB}/indexes/stats?name=Logs/Search" 2>/dev/null \
+      | "${SEARCHBENCH_PYTHON:-python3}" -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)['Results'][0]; print(d.get('IsStale'), d.get('EntriesCount'))
+except Exception: print('True', 0)")"
+    [[ "$stale" == "False" ]] && { echo "[load] index caught up: ${entries} entries after $(( $(date +%s) - t0 ))s"; break; }
+    if (( $(date +%s) - t0 > ${RAVEN_INDEX_TIMEOUT:-14400} )); then
+        echo "[load] ERROR: index still stale after ${RAVEN_INDEX_TIMEOUT:-14400}s (${entries} entries)" >&2
+        exit 1
+    fi
+    sleep 10
+done
+
+docs=$(curl -fsS "$R/databases/${RAVEN_DB}/stats" \
+  | "${SEARCHBENCH_PYTHON:-python3}" -c "import sys,json;print(json.load(sys.stdin)['CountOfDocuments'])")
+echo "[load] ${RAVEN_DB} documents=${docs}"

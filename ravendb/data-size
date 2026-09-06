@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# On-disk bytes of everything this engine stores to serve the workload:
+# documents + the Corax full-text index, as RavenDB itself reports them.
+#
+# SizeOnDisk covers the database's data and index files. TempBuffersSizeOnDisk is
+# deliberately EXCLUDED -- those are scratch buffers, not stored data, and they
+# are reclaimed; counting them would inflate the footprint against engines whose
+# scratch space is never surfaced.
+set -euo pipefail
+: "${RAVEN_PORT:=8080}"
+: "${RAVEN_DB:=otel_logs}"
+curl -fsS "http://127.0.0.1:${RAVEN_PORT}/databases/${RAVEN_DB}/stats" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['SizeOnDisk']['SizeInBytes'])"

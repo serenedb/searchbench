@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Activate the RavenDB licence if one is present and not already applied.
+#
+# Idempotent and non-fatal: without a licence RavenDB still runs, just under AGPL
+# limits (MaxCores 3, MaxMemory 6GB). Those caps do not fail anything -- they
+# quietly make the numbers meaningless on a 32-core box, so this reports loudly
+# which regime is in force instead of leaving it to be discovered later.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${RAVEN_PORT:=8080}"
+: "${RAVEN_LICENSE_FILE:=${PWD}/license.json}"
+R="http://127.0.0.1:${RAVEN_PORT}"
+
+status() {
+    curl -fsS "$R/license/status" 2>/dev/null \
+      | python3 -c "import sys,json;d=json.load(sys.stdin);print(f\"{d.get('Type')}|{d.get('MaxCores')}|{d.get('MaxMemory')}\")" 2>/dev/null
+}
+
+cur=$(status || true)
+if [[ -n "$cur" && "${cur%%|*}" != "None" ]]; then
+    IFS='|' read -r t c m <<<"$cur"
+    echo "licence: $t (MaxCores=$c MaxMemory=${m}GB)"
+    exit 0
+fi
+
+if [[ ! -f "$RAVEN_LICENSE_FILE" ]]; then
+    echo "licence: NONE -- running under AGPL limits (MaxCores=3, MaxMemory=6GB)." >&2
+    echo "         Results are throttled by the licence, not the engine." >&2
+    echo "         Put a licence JSON at $RAVEN_LICENSE_FILE (see README)." >&2
+    exit 0
+fi
+
+curl -fsS -X POST "$R/admin/license/activate" \
+     -H 'Content-Type: application/json' \
+     --data-binary @"$RAVEN_LICENSE_FILE" >/dev/null 2>&1 || {
+    echo "licence: activation FAILED (file present but rejected)" >&2; exit 0; }
+
+sleep 2
+new=$(status || true)
+IFS='|' read -r t c m <<<"$new"
+echo "licence: activated -> $t (MaxCores=$c MaxMemory=${m}GB)"

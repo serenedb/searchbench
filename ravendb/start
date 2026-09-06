@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Launch RavenDB container; idempotent via ./check
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${RAVEN_PORT:=8080}"
+: "${RAVEN_TCP_PORT:=38888}"
+: "${RAVEN_DATA_DIR:=${PWD}/raven-data}"
+: "${RAVEN_IMAGE:=ravendb/ravendb:7.2.5}"
+: "${RAVEN_CONTAINER:=searchbench-raven}"
+# License JSON. Unlicensed RavenDB runs under AGPL limits -- MaxCores 3,
+# MaxMemory 6GB -- which on a 32-core box measures the licence, not the engine.
+# The file is gitignored: it is a per-customer key, not repo content.
+: "${RAVEN_LICENSE_FILE:=${PWD}/license.json}"
+
+if ./check >/dev/null 2>&1; then
+    echo "RavenDB already up on :${RAVEN_PORT}"
+    ./apply-license || true
+    exit 0
+fi
+
+mkdir -p "$RAVEN_DATA_DIR"
+chmod a+rwX "$RAVEN_DATA_DIR" 2>/dev/null || true
+
+# Drop a container built from a different image so a RAVEN_IMAGE bump takes
+# effect -- a plain `docker start` would keep the old version.
+if docker inspect "$RAVEN_CONTAINER" >/dev/null 2>&1 \
+   && [[ "$(docker inspect -f '{{.Config.Image}}' "$RAVEN_CONTAINER")" != "$RAVEN_IMAGE" ]]; then
+    echo "container was built from a different image; recreating for ${RAVEN_IMAGE}"
+    docker rm -f "$RAVEN_CONTAINER" >/dev/null
+fi
+
+if docker inspect "$RAVEN_CONTAINER" >/dev/null 2>&1; then
+    docker start "$RAVEN_CONTAINER" >/dev/null
+else
+    # --network host to match the other HTTP adapters: no NAT in the timing path.
+    # Setup_Mode=None + UnsecuredAccessAllowed skips the interactive setup wizard;
+    # this is a benchmark box, not a deployment.
+    docker run -d \
+        --name "$RAVEN_CONTAINER" \
+        --network host \
+        -e RAVEN_Setup_Mode=None \
+        -e RAVEN_License_Eula_Accepted=true \
+        -e RAVEN_Security_UnsecuredAccessAllowed=PublicNetwork \
+        -e "RAVEN_ServerUrl=http://0.0.0.0:${RAVEN_PORT}" \
+        -e RAVEN_DataDir=/var/lib/ravendb/data \
+        -v "${RAVEN_DATA_DIR}:/var/lib/ravendb/data" \
+        "$RAVEN_IMAGE" >/dev/null
+fi
+
+for _ in $(seq 1 180); do
+    if ./check >/dev/null 2>&1; then
+        ./apply-license || true
+        echo "RavenDB up on :${RAVEN_PORT} (backend=docker)"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "RavenDB did not become healthy within 180s." >&2
+docker logs --tail 50 "$RAVEN_CONTAINER" 2>&1 >&2 || true
+exit 1
