@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Check host prereqs for VictoriaLogs adapter (docker backend).
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${VL_DATA_DIR:=${PWD}/vl-data}"
+: "${VL_IMAGE:=victoriametrics/victoria-logs:v1.52.0}"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+for tool in curl python3; do
+    command -v "$tool" >/dev/null || die "required tool not on PATH: $tool"
+done
+for mod in pyarrow orjson requests; do
+    "${SEARCHBENCH_PYTHON:-python3}" -c "import $mod" 2>/dev/null \
+      || die "python module '$mod' missing in '${SEARCHBENCH_PYTHON:-python3}'. Set SEARCHBENCH_PYTHON to a venv with it (pip install $mod)."
+done
+
+command -v docker >/dev/null || die "docker not on PATH"
+docker info >/dev/null 2>&1 \
+  || die "docker daemon not responding (try: systemctl start docker; or fix permissions)"
+echo "VL backend: docker ($VL_IMAGE)"
+docker pull --quiet "$VL_IMAGE" >/dev/null   # idempotent, cheap once cached
+
+echo "VL_DATA_DIR: $VL_DATA_DIR"
+
+# Don't wipe: re-runs keep the data; ./load owns it.
+mkdir -p "$VL_DATA_DIR"
+chmod -R a+rwX "$VL_DATA_DIR" 2>/dev/null || true
+
+echo "Adapter ready. Run ./start to launch."

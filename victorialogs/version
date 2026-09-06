@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Print running VictoriaLogs version; labels results JSON
+set -euo pipefail
+: "${VL_PORT:=9428}"
+curl -fsS "http://127.0.0.1:${VL_PORT}/metrics" 2>/dev/null \
+  | grep -m1 '^vm_app_version' \
+  | sed -n 's/.*short_version="v\([^"]*\)".*/\1/p' \
+  | grep . || echo unknown

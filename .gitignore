@@ -42,6 +42,7 @@ elastic-columnar/es-smoke/
 
 cratedb/crate_data/
 
+victorialogs/vl-data/
 
 ravendb/raven-data/
 ravendb/license.json

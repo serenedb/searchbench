@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Run one VictoriaLogs query; timing on stderr.
+#
+# stdin = one LogsQL query. stdout = result rows (one JSON object per line, which
+# is what /select/logsql/query returns natively). stderr last line = curl
+# %{time_total} secs: client round-trip, comparable across engines.
+#
+# A query line may instead be the sentinel `UNSUPPORTED: <reason>`, emitted by
+# translate.py for the constructs LogsQL has no form for (relevance ranking,
+# fuzzy matching, joins). Those exit non-zero so lib/benchmark.sh records a null
+# latency and logs the reason, rather than silently timing a different question.
+set -euo pipefail
+
+: "${VL_PORT:=9428}"
+VL_URL="http://127.0.0.1:${VL_PORT}"
+
+q=$(cat)
+
+if [[ "$q" == UNSUPPORTED:* ]]; then
+    echo "${q#UNSUPPORTED: }" >&2
+    exit 3
+fi
+
+# -w appends round-trip secs on final line. --data-urlencode so the query text
+# survives verbatim (LogsQL is full of &, |, +, quotes).
+resp=$(curl -fsS -w '\n%{time_total}' -X POST "$VL_URL/select/logsql/query" \
+    --data-urlencode "query=$q")
+rt=$(printf '%s\n' "$resp" | tail -n1)
+body=$(printf '%s\n' "$resp" | sed '$d')
+
+printf '%s\n' "$body"
+printf '%s\n' "$rt" >&2
