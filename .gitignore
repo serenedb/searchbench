@@ -35,6 +35,8 @@ tiger-columnstore/tiger_data/
 
 
 
+elastic-columnar/es-data/
+elastic-columnar/es-smoke/
 
 cratedb/crate_data/
 
