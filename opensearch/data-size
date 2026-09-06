@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
-# On-disk byte size of otel_logs index
+# On-disk bytes of everything this engine stores to serve the workload.
+#
+# That is otel_logs PLUS trace_lookup -- the dimension index build_lookup.py
+# creates so the ES|QL join queries (Q84-Q92) can run at all, since Elasticsearch
+# cannot self-join and LOOKUP JOIN requires an index in `lookup` mode. It is not
+# optional: delete it and those nine queries fail. Its build time is already
+# charged to load_time (build_lookup.py runs inside ./load), so charging its
+# bytes here keeps time and space accounted the same way, and matches the
+# adapter contract's "data + index footprint".
+#
+# Summing all non-system indices (leading '.' excluded) rather than naming the
+# two, so this stays correct if an adapter ever adds another structure.
 set -euo pipefail
 : "${OS_PORT:=9200}"
-INDEX="otel_logs"
-curl -fsS "http://127.0.0.1:${OS_PORT}/_cat/indices/${INDEX}?bytes=b&h=ss" \
-  | awk '{print $1}'
+curl -fsS "http://127.0.0.1:${OS_PORT}/_cat/indices?bytes=b&h=index,ss" \
+  | awk '$1 !~ /^\./ { s += $2 } END { print s+0 }'

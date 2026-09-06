@@ -11,9 +11,13 @@ set -euo pipefail
 OS_URL="http://127.0.0.1:${OS_PORT}"
 INDEX="otel_logs"
 
+# request_cache=false is belt-and-braces only: config/index_mapping.json already
+# sets index.requests.cache.enable=false, and re-running with this parameter
+# changed no timing beyond run-to-run noise. The residual cold/hot ratio is page
+# cache and JVM warm-up, not a result cache.
 q=$(cat)
 # -w appends round-trip secs on final line
-resp=$(curl -fsS -w '\n%{time_total}' -X POST "$OS_URL/$INDEX/_search" \
+resp=$(curl -fsS -w '\n%{time_total}' -X POST "$OS_URL/$INDEX/_search?request_cache=false" \
     -H 'Content-Type: application/json' --data-binary "$q")
 rt=$(printf '%s\n' "$resp" | tail -n1)
 body=$(printf '%s\n' "$resp" | sed '$d')

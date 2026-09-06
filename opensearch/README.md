@@ -28,7 +28,7 @@ memlock=-1:-1` automatically.
 | `OS_PORT` | `9200` | HTTP port |
 | `OS_HEAP` | `30g` | JVM heap |
 | `OS_DATA_DIR` | `${PWD}/os-data` | data + logs |
-| `OS_IMAGE` | `opensearchproject/opensearch:2.18.0` | image |
+| `OS_IMAGE` | `opensearchproject/opensearch:3.8.0` | image |
 | `OS_CONTAINER` | `searchbench-os` | container |
 
 Index mapping in [`config/index_mapping.json`](config/index_mapping.json)

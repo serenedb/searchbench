@@ -105,7 +105,7 @@
 -- Q52 task=top_k filter=and,negation freq=hi (error but NOT cache)
 {"query":{"bool":{"must":[{"match":{"Body":"error"}}],"must_not":[{"match":{"Body":"cache"}}]}},"size":100,"sort":[{"_score":"desc"}],"_source":["Timestamp","ServiceName","Body"]}
 -- Q53 task=top_k filter=and,window freq=hi (term + service + Timestamp BETWEEN 6h)
-{"query":{"match":{"Body":"charge"}},"size":100,"sort":[{"_score":"desc"}],"_source":["Timestamp","ServiceName","Body"]}
+{"query":{"bool":{"must":[{"match":{"Body":"charge"}}],"filter":[{"term":{"ServiceName":"payment"}},{"range":{"Timestamp":{"gte":"2025-09-23T00:00:00","lte":"2025-09-23T06:00:00"}}}]}},"size":100,"sort":[{"_score":"desc"}],"_source":["Timestamp","ServiceName","Body"]}
 -- Q54 task=group_by filter=or freq=hi (key=SeverityText, ordered)
 {"query":{"match":{"Body":{"query":"error failed","operator":"or"}}},"size":0,"aggs":{"by_sev":{"terms":{"field":"SeverityText","size":100,"order":{"_count":"desc"}}}}}
 -- Q55 task=group_by filter=term freq=hi (key=SeverityText, ordered)

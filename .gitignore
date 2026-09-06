@@ -13,6 +13,8 @@ elastic/es-data-100m/
 elastic/es-smoke/
 
 opensearch/os-data/
+opensearch/os-data-100m/
+opensearch/os-data-1b/
 opensearch/os-smoke/
 
 parade/paradedb_data
