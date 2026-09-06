@@ -1,0 +1,15 @@
+{
+  "engine": "ParadeDB",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "0.25.0",
+  "load_time": 1126.667,
+  "data_size": 117325496320,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-08-06",
+  "data_dir": null,
+  "loaded_by": null,
+  "backfilled_from": [
+    "parade/results/paradedb_otel_logs_100m.json"
+  ]
+}

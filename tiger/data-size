@@ -6,6 +6,10 @@
 # indexes across every chunk plus the root; fall back to pg_total_relation_size
 # for a plain table so the script also works pre-conversion. Analog to the
 # ParadeDB/Postgres adapters' data-size; all exclude WAL.
+#
+# Shared with ../tiger-columnstore unchanged: hypertable_detailed_size walks the
+# chunks, and a converted chunk's bytes live in the compressed relation that walk
+# reaches, so the number stays dataset + index footprint for either storage.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 

@@ -1,0 +1,11 @@
+{
+  "engine": "TigerData",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "1.4.0",
+  "load_time": 1832.921,
+  "data_size": 120986910720,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-09-04",
+  "loaded_by": "queries.sql"
+}

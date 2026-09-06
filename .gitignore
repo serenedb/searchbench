@@ -24,3 +24,5 @@ arangodb/arango_data
 .venv
 notes.md
 launch_all.sh
+tiger/tiger_data/
+tiger-columnstore/tiger_data/

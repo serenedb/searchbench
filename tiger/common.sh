@@ -19,8 +19,10 @@ export PGHOST PGPORT PGUSER PGDATABASE
 # --- Docker deployment --------------------------------------------------------
 # timescaledb-ha ships pg_textsearch prebuilt (it needs PG >= 17 and
 # shared_preload_libraries, so a vanilla postgres image cannot run it). Pinned to
-# PG 18.4 / TS 2.29.1 / pg_textsearch 1.3.0; the pg18 line is -all/-oss tags only.
-: "${TIGER_IMAGE:=timescale/timescaledb-ha:pg18.4-ts2.29.1-all}"
+# PG 18.4 / TS 2.29.2 / pg_textsearch 1.4.0; the pg18 line is -all/-oss tags only.
+: "${TIGER_IMAGE:=timescale/timescaledb-ha:pg18.4-ts2.29.2-all}"
+# Overridden by ../tiger-columnstore, which reuses this file and needs its own
+# port/container/data dir so both variants can stay loaded at once.
 : "${TIGER_CONTAINER:=searchbench-tiger}"
 # Host bind-mount under repo (/mnt/data), NOT a docker named volume: named volumes
 # live on the small root disk and overflow at larger scales (cf. parade/common.sh).
