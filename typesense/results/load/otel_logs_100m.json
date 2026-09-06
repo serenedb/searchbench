@@ -1,0 +1,11 @@
+{
+  "engine": "Typesense",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "30.2",
+  "load_time": 14495.571,
+  "data_size": 217800699904,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-08-14",
+  "loaded_by": "queries.ts"
+}

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# On-disk bytes: documents + indexes, from the RocksDB data dir.
+#
+# Typesense holds its indexes in RAM and persists documents to RocksDB, so the
+# on-disk figure is NOT directly comparable to engines that keep their index on
+# disk -- it understates what the engine needs to serve the workload. Noted in
+# README.md; measured here from the filesystem for consistency with the other
+# adapters, using actual blocks rather than --apparent-size.
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${TS_DATA_DIR:=${PWD}/ts-data}"
+du -s --block-size=1 "$TS_DATA_DIR" | cut -f1

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Recreate the collection and bulk-ingest the corpus.
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${TS_PORT:=8108}"; : "${TS_KEY:=searchbench}"; : "${TS_COLLECTION:=otel_logs}"
+T="http://127.0.0.1:${TS_PORT}"
+AUTH=(-H "X-TYPESENSE-API-KEY: ${TS_KEY}" -H 'Content-Type: application/json')
+
+if [[ "${SEARCHBENCH_SKIP_LOAD:-no}" == "yes" ]]; then
+    echo "[load] SEARCHBENCH_SKIP_LOAD=yes, leaving collection as-is"; exit 0
+fi
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob; files=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet ); shopt -u nullglob
+[[ ${#files[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+echo "[load] recreating collection ${TS_COLLECTION} (schema: config/collection_schema.json)"
+curl -fsS -X DELETE "${AUTH[@]}" "$T/collections/${TS_COLLECTION}" >/dev/null 2>&1 || true
+
+# token_separators must list EVERY non-alphanumeric character, because that is
+# what the reference analyzer splits on. A partial list is silently wrong: with
+# only ["_","-","/","."], a token like `error:` stays intact and exact `error`
+# under-counted by 12% (19,410 expected vs 17,0xx). With the full 32-character
+# set, all nine ground-truth probes match to the row -- term, AND, phrase,
+# prefix, infix and OR. Whitespace is already a separator and is rejected here.
+#
+# infix on Body covers the ES wildcard queries (*stem*, *stem) and measured free
+# at ingest: 8,896 docs/s without vs 8,891 with.
+#
+# Timestamp is stored unindexed (index:false) purely for projections; every time
+# predicate uses TimestampMs, because Typesense has no date type and a range
+# over an ISO string would compare lexicographically.
+curl -fsS -X POST "${AUTH[@]}" "$T/collections" \
+     --data-binary @config/collection_schema.json >/dev/null
+
+TS_URL="$T" TS_KEY="$TS_KEY" TS_COLLECTION="$TS_COLLECTION" \
+  "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py --local-dir "$SEARCHBENCH_DATA_DIR" --files "${#files[@]}"
+
+n=$(curl -fsS -H "X-TYPESENSE-API-KEY: ${TS_KEY}" "$T/collections/${TS_COLLECTION}" \
+    | "${SEARCHBENCH_PYTHON:-python3}" -c "import sys,json;print(json.load(sys.stdin).get('num_documents','unknown'))")
+echo "[load] ${TS_COLLECTION} documents=${n}"

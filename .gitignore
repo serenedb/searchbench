@@ -50,6 +50,7 @@ surrealdb/surreal-data/
 
 meilisearch/meili-data/
 
+typesense/ts-data/
 
 quickwit/qw-data/
 clickhouse/clickhouse

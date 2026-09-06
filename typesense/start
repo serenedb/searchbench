@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Launch Typesense container; idempotent via ./check
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${TS_PORT:=8108}"; : "${TS_KEY:=searchbench}"
+: "${TS_DATA_DIR:=${PWD}/ts-data}"
+: "${TS_IMAGE:=typesense/typesense:30.2}"
+: "${TS_CONTAINER:=searchbench-typesense}"
+
+if ./check >/dev/null 2>&1; then echo "Typesense already up on :${TS_PORT}"; exit 0; fi
+mkdir -p "$TS_DATA_DIR"; chmod a+rwX "$TS_DATA_DIR" 2>/dev/null || true
+
+if docker inspect "$TS_CONTAINER" >/dev/null 2>&1 \
+   && [[ "$(docker inspect -f '{{.Config.Image}}' "$TS_CONTAINER")" != "$TS_IMAGE" ]]; then
+    echo "container was built from a different image; recreating for ${TS_IMAGE}"
+    docker rm -f "$TS_CONTAINER" >/dev/null
+fi
+if docker inspect "$TS_CONTAINER" >/dev/null 2>&1; then
+    docker start "$TS_CONTAINER" >/dev/null
+else
+    # nofile 65535: with docker's default 1024 the server exhausts descriptors
+    # partway through a large load, then spins at 100% CPU logging
+    # "Fail to open /proc/self/fd: Too many open files" and stops accepting
+    # connections. It does not crash -- it hangs, and the client just retries,
+    # so a 100m load sat wedged for 7.5 hours at 2.5M documents before this was
+    # spotted. Same limit the elastic and opensearch adapters set.
+    docker run -d --name "$TS_CONTAINER" --network host \
+        --ulimit nofile=65535:65535 \
+        -v "${TS_DATA_DIR}:/data" "$TS_IMAGE" \
+        --data-dir /data --api-key="${TS_KEY}" --listen-port "${TS_PORT}" >/dev/null
+fi
+for _ in $(seq 1 180); do
+    if ./check >/dev/null 2>&1; then echo "Typesense up on :${TS_PORT} (backend=docker)"; exit 0; fi
+    sleep 1
+done
+echo "Typesense did not become healthy within 180s." >&2
+docker logs --tail 50 "$TS_CONTAINER" 2>&1 >&2 || true
+exit 1
