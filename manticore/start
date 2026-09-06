@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_backend.sh
+
+# Manticore ships a query cache ON by default (qcache_max_bytes=16M). It only
+# stores result sets for queries slower than qcache_thresh_msec (3000ms), so at
+# this workload's ~80ms per query nothing ever qualified -- qcache_cached_queries
+# read 0 after a full 92-query run. Disabled anyway so the benchmark never
+# measures a cache lookup if a future query, scale, or threshold change crosses
+# that line.
+mc_disable_qcache() {
+    curl -s -m 10 "http://127.0.0.1:${MANTICORE_HTTP_PORT}/sql?mode=raw" \
+        --data-urlencode "query=SET GLOBAL qcache_max_bytes=0" >/dev/null 2>&1 || true
+}
+
+if ./check >/dev/null 2>&1; then
+    mc_disable_qcache
+    echo "Manticore already up on :${MANTICORE_HTTP_PORT}"
+    exit 0
+fi
+
+if docker inspect "$MANTICORE_CONTAINER" >/dev/null 2>&1; then
+    docker start "$MANTICORE_CONTAINER" >/dev/null
+else
+    # Bind-mount a project-local dir on the big /mnt/data disk (see _backend.sh).
+    # chmod 777 so the container's `manticore` user can write into the host dir.
+    mkdir -p "$MANTICORE_DATA_DIR"
+    chmod 777 "$MANTICORE_DATA_DIR"
+    # nofile: the stock image caps open files at 1024. Columnar keeps ~1 file per
+    # attribute per live disk chunk open, so FD use = live_chunks x files_per_chunk.
+    # The real fix is keeping live_chunks small (large rt_mem_limit in ./load); 8k
+    # here is modest headroom above that, not a workaround for a chunk explosion.
+    docker run -d \
+        --name "$MANTICORE_CONTAINER" \
+        --network host \
+        --ulimit nofile=8192:8192 \
+        -v "${MANTICORE_DATA_DIR}:/var/lib/manticore" \
+        "$MANTICORE_IMAGE" >/dev/null
+fi
+
+for _ in $(seq 1 60); do
+    if ./check >/dev/null 2>&1; then
+        mc_disable_qcache
+        echo "Manticore up on :${MANTICORE_HTTP_PORT}"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "Manticore did not become healthy within 60s." >&2
+docker logs --tail 50 "$MANTICORE_CONTAINER" 2>&1 >&2 || true
+exit 1

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_backend.sh
+
+PY="${SEARCHBENCH_PYTHON:-python3}"
+for tool in curl jq docker; do
+    command -v "$tool" >/dev/null || die "required tool not on PATH: $tool"
+done
+command -v "$PY" >/dev/null || die "python not found: $PY (set SEARCHBENCH_PYTHON)"
+docker info >/dev/null 2>&1 || die "docker daemon not responding"
+# ingest.py only needs `requests` (serened reads parquet; no pyarrow here).
+"$PY" -c "import requests" 2>/dev/null \
+    || die "python module 'requests' missing for $PY (pip install requests)"
+
+docker pull --quiet "$MANTICORE_IMAGE" >/dev/null
+echo "Manticore image: $MANTICORE_IMAGE"
+echo "Data dir:        $MANTICORE_DATA_DIR (bind-mount)"
+echo "Adapter ready. Run ./start to launch."

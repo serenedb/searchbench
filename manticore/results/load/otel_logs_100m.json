@@ -1,0 +1,11 @@
+{
+  "engine": "Manticore",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "unknown",
+  "load_time": 1230.439,
+  "data_size": 38117294080,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-08-15",
+  "loaded_by": "queries_tagged.manticore"
+}

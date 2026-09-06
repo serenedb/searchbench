@@ -49,3 +49,5 @@ clickhouse/clickhouse
 clickhouse/clickhouse_data/
 clickhouse/*.log
 clickhouse/.clickhouse.pid
+manticore/manticore_data/
+manticore/manticore-data/

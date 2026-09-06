@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${MANTICORE_HTTP_PORT:=9308}"
+curl -fsS "http://127.0.0.1:${MANTICORE_HTTP_PORT}/cli?q=show+version" 2>/dev/null \
+  | head -1 | jq -r '.[0].data[0].Component + " " + .[0].data[0].Version' 2>/dev/null \
+  || echo "unknown"

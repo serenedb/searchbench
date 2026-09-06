@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Load the OTel-logs corpus into Manticore and build its full-text index.
+#
+# Manticore can't read parquet, so (like the other adapters) we use a serened
+# binary (embeds DuckDB) as the parquet reader. To keep memory bounded at 100M+
+# rows we stream with `COPY (...) TO '/dev/stdout' (FORMAT json)` under
+# `SET preserve_insertion_order=false` (a parallel read_parquet otherwise buffers
+# the whole result to preserve row order -> tens of GB -> OOM). ingest.py wraps
+# each NDJSON line as a {"insert":...} bulk action and POSTs to /bulk.
+#
+# Single table otel_logs, holding ALL source columns (full parity with the
+# SereneDB index). Only `body` is full-text indexed (type `text`); every other
+# column is a Manticore ATTRIBUTE -- stored in the index as-is, retrievable and
+# filterable, but NOT tokenized/inverted (the equivalent of SereneDB's INCLUDE):
+#   string  scalar varchars (servicename, traceid, severitytext, scopename,
+#           scopeversion, resourceschemaurl, scopeschemaurl)
+#   int     numerics (severitynumber, traceflags)
+#   bigint  epoch-ms timestamp (ts <- Timestamp; single timestamp, as SereneDB)
+#   text    the three attribute maps (resource/scope/log), stored as raw JSON
+#   stored  strings in the lz4hc-compressed docstore, NOT full-text indexed.
+#           Manticore has no map type; as `json` the whole object sits UNcompressed
+#           in the row-wise blob (.spb) -- 82% of the index at 100m. `text stored`
+#           moves them into the compressed docstore instead: ~37% of the json size
+#           (measured on 1m; lz4hc beat lz4 by ~7%, columnar was 25% WORSE for this
+#           near-unique text). Trade-off: opaque text, no subkey (col.key) filtering
+#           -- fine, no query in the workload touches the maps.
+# Joins (Q84-Q92) are UNSUPPORTED -- Manticore has no same-table self-join.
+# Tokenization matches SereneDB: split on non-alphanumeric, lowercase, no
+# stemming/stopwords (charset_table + morphology=none); min_infix_len enables
+# prefix/infix wildcard + REGEX.
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_backend.sh
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${SERENED_BIN:?SERENED_BIN must point at a serened binary (parquet reader)}"
+[[ -x "$SERENED_BIN" ]] || { echo "not executable: $SERENED_BIN" >&2; exit 1; }
+
+MANTICORE_URL="http://127.0.0.1:${MANTICORE_HTTP_PORT}"
+log() { printf '%s\n' "$*" >&2; }
+mc_sql() { curl -fsS -X POST "${MANTICORE_URL}/cli" --data "$1"; }
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob
+parquet=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#parquet[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+GLOB="${SEARCHBENCH_DATA_DIR}/part_*.parquet"
+log "loading ${#parquet[@]} parquet file(s) from ${SEARCHBENCH_DATA_DIR}"
+
+# ts is epoch MILLISECONDS (bigint); minute buckets = ts DIV 60000, window filters
+# use ms literals. The three attribute maps are emitted as JSON *strings*
+# (to_json(...)::VARCHAR -> "{\"k\":\"v\",...}") to feed the `text stored` map
+# columns (compressed docstore). Column names match the query field names.
+LOGS_SELECT="epoch_ms(timestamp::TIMESTAMP_NS) AS ts, body AS body, servicename AS servicename, traceid AS traceid, traceflags::INT AS traceflags, severitytext AS severitytext, severitynumber::INT AS severitynumber, scopename AS scopename, scopeversion AS scopeversion, resourceschemaurl AS resourceschemaurl, scopeschemaurl AS scopeschemaurl, to_json(resourceattributes)::VARCHAR AS resourceattributes, to_json(scopeattributes)::VARCHAR AS scopeattributes, to_json(logattributes)::VARCHAR AS logattributes"
+logs_copy="SET preserve_insertion_order=false; COPY (SELECT ${LOGS_SELECT} FROM read_parquet('${GLOB}')) TO '/dev/stdout' (FORMAT json);"
+
+# --- phase 1: schema ----------------------------------------------------------
+# Storage engine: row (default) or columnar. Selected with
+# SEARCHBENCH_VERSION=columnar, which the driver also uses to label the column
+# "Manticore (columnar)" and write a separate results file, so both variants
+# coexist. Columnar keeps attributes in a column store; the full-text index and
+# the lz4hc docstore are unaffected either way.
+: "${MANTICORE_STORAGE:=${SEARCHBENCH_VERSION:-row}}"
+case "$MANTICORE_STORAGE" in
+    columnar) MC_ENGINE_OPT=" engine='columnar'" ;;
+    row|"")   MC_ENGINE_OPT="" ;;
+    *) echo "MANTICORE_STORAGE must be row or columnar, got: $MANTICORE_STORAGE" >&2; exit 1 ;;
+esac
+log "[schema] storage engine: ${MANTICORE_STORAGE}"
+
+# Single table. Joins (Q84-Q92) are UNSUPPORTED -- Manticore has no same-table
+# self-join, so there is no companion table.
+log "[schema] (re)creating ${MANTICORE_TABLE}"
+mc_sql "drop table if exists ${MANTICORE_TABLE}" >/dev/null
+# DROP TABLE leaves the on-disk directory behind, and CREATE then fails with
+# "directory is not empty: /var/lib/manticore/<table>". Harmless when the schema
+# is unchanged, fatal when switching storage engine, so clear it explicitly.
+docker exec "${MANTICORE_CONTAINER}" rm -rf "/var/lib/manticore/${MANTICORE_TABLE}" >/dev/null 2>&1 || true
+mc_sql "create table ${MANTICORE_TABLE}(
+            body text,
+            servicename string,
+            traceid string,
+            spanid string,
+            traceflags int,
+            severitytext string,
+            severitynumber int,
+            scopename string,
+            scopeversion string,
+            resourceschemaurl string,
+            scopeschemaurl string,
+            resourceattributes text stored,
+            scopeattributes text stored,
+            logattributes text stored,
+            ts bigint
+        ) morphology='none' charset_table='0..9, A..Z->a..z, a..z' min_infix_len='2'
+            rt_mem_limit='2G' docstore_compression='lz4hc'${MC_ENGINE_OPT}
+            "
+# Do NOT swallow the create: a silent failure here surfaces much later as
+# "table 'otel_logs' absent" from the bulk ingest, which is a confusing way to
+# learn the schema never got created.
+# mc_sql returns HTTP 200 with an {"error": ...} payload for a failed statement,
+# so testing its exit status proves nothing. Confirm the table is really listed.
+mc_sql "show tables" | grep -qw "${MANTICORE_TABLE}" \
+    || { echo "[schema] ERROR: ${MANTICORE_TABLE} was not created" >&2
+         mc_sql "show tables" >&2; exit 1; }
+log "[schema] ${MANTICORE_TABLE} created"
+# min_infix_len='2': index infixes down to 2 chars, so every wildcard/prefix/infix
+# and REGEX query is covered (the workload's shortest affix is 4 chars, but 2 gives
+# full coverage headroom). The extra 2-/3-char infixes only meaningfully grow the
+# dictionary at 100M/1B scale.
+
+# --- phase 2: ingest (serened COPY NDJSON -> Manticore /bulk) ------------------
+log "[ingest] ${MANTICORE_TABLE}: serened COPY --NDJSON--> /bulk"
+"$SERENED_BIN" shell -c "$logs_copy" \
+    | MANTICORE_URL="$MANTICORE_URL" MANTICORE_TABLE="$MANTICORE_TABLE" "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py
+
+# --- phase 3: flush RAM chunk to disk (NO blocking optimize) -------------------
+# We deliberately do NOT run a synchronous `optimize`. A blocking full merge-to-one-
+# chunk would (a) dominate load_time and (b) be inconsistent with every other engine,
+# which are measured WITHOUT blocking on compaction (e.g. SereneDB compacts in the
+# background via compaction_interval; ES/CH merge segments in the background too).
+# Manticore's RT table already auto-compacts in the background (progressive
+# optimize), so we just flush the RAM chunk to disk -- for durability and an accurate
+# on-disk size -- and let compaction settle in the background, matching the others.
+log "[flush] ${MANTICORE_TABLE}"
+mc_sql "flush ramchunk ${MANTICORE_TABLE}" >/dev/null
+
+count_of() { curl -fsS "${MANTICORE_URL}/sql?mode=raw" --data-urlencode "query=SELECT COUNT(*) c FROM $1" \
+             | jq -r '.[0].data[0].c // 0'; }
+rows=$(count_of "$MANTICORE_TABLE")
+[[ "${rows:-0}" -gt 0 ]] || { echo "${MANTICORE_TABLE} is empty after load" >&2; exit 1; }
+log "[done] ${MANTICORE_TABLE}=${rows} rows"
