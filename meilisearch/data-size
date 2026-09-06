@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# On-disk bytes: documents + the inverted index, measured from the LMDB dir.
+#
+# /stats reports databaseSize, but that is the LMDB map size -- allocated, not
+# used -- so it over-reports badly. This measures ACTUAL BLOCKS, not
+# --apparent-size: the map file can be sparse, and apparent size would then
+# count allocation rather than data. (On this corpus the two happened to agree,
+# 70.97 vs 70.52 GB, but that is not guaranteed.)
+#
+# NOTE: pending task update files also live under this directory, so a
+# measurement taken while the task queue is backlogged over-reports. ./load
+# drains the queue before the driver measures.
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${MEILI_DATA_DIR:=${PWD}/meili-data}"
+du -s --block-size=1 "$MEILI_DATA_DIR" | cut -f1

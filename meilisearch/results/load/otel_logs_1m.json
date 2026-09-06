@@ -1,0 +1,11 @@
+{
+  "engine": "Meilisearch",
+  "dataset": "otel_logs_1m",
+  "build": "",
+  "engine_version": "1.53.1",
+  "load_time": 67.701,
+  "data_size": 3495780352,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-08-14",
+  "loaded_by": "queries.meili"
+}

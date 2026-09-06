@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Run one Meilisearch query; timing on stderr.
+#
+# stdin = one JSON search body. stdout = result rows. stderr last line = curl
+# %{time_total} secs: client round-trip, comparable across engines.
+#
+# Three response shapes are flattened to rows:
+#   * count     -> hitsPerPage:0, so hits is empty and totalHits is the answer
+#   * group_by  -> facetDistribution {field: {value: count}}, the terms-agg form
+#   * hits      -> the documents
+set -euo pipefail
+: "${MEILI_PORT:=7700}"; : "${MEILI_KEY:=searchbench-meili-master-key-01}"
+: "${MEILI_INDEX:=otel_logs}"
+M="http://127.0.0.1:${MEILI_PORT}"
+
+q=$(cat)
+if [[ "$q" == UNSUPPORTED:* ]]; then echo "${q#UNSUPPORTED: }" >&2; exit 3; fi
+
+resp=$(curl -fsS -w '\n%{time_total}' -X POST "$M/indexes/${MEILI_INDEX}/search" \
+    -H "Authorization: Bearer ${MEILI_KEY}" -H 'Content-Type: application/json' --data-binary "$q")
+rt=$(printf '%s\n' "$resp" | tail -n1)
+payload=$(printf '%s\n' "$resp" | sed '$d')
+
+printf '%s' "$payload" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if "message" in d:
+    print(d["message"], file=sys.stderr); sys.exit(1)
+if d.get("facetDistribution"):
+    for field, dist in d["facetDistribution"].items():
+        for k, v in sorted(dist.items(), key=lambda kv: -kv[1]):
+            print(json.dumps({"key": k, "doc_count": v}))
+elif d.get("hits"):
+    for h in d["hits"]:
+        print(json.dumps(h))
+else:
+    print(d.get("totalHits", d.get("estimatedTotalHits", 0)))
+'
+printf '%s\n' "$rt" >&2

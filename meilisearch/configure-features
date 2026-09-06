@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Enable the containsFilter experimental feature.
+#
+# Without it, `Body CONTAINS "x"` is rejected. That single flag is what makes
+# OR semantics and infix/suffix matching expressible at all: the filter language
+# supports AND/OR/NOT, so `Body CONTAINS "a" OR Body CONTAINS "b"` is the only
+# way to express ES's default OR-across-terms -- none of the three
+# matchingStrategy values does it (all return 0 for terms in different docs).
+set -euo pipefail
+: "${MEILI_PORT:=7700}"
+: "${MEILI_KEY:=searchbench-meili-master-key-01}"
+curl -fsS -X PATCH "http://127.0.0.1:${MEILI_PORT}/experimental-features/" \
+     -H "Authorization: Bearer ${MEILI_KEY}" -H 'Content-Type: application/json' \
+     --data-binary '{"containsFilter":true}' >/dev/null 2>&1 || true
