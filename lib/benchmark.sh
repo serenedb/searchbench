@@ -91,16 +91,40 @@ DO_EXPLAIN=no
 DO_EXPLAIN_ANALYZE=no
 [[ "${SEARCHBENCH_EXPLAIN_ANALYZE:-}" =~ ^(1|yes|true|on)$ ]] && DO_EXPLAIN_ANALYZE=yes
 : "${SEARCHBENCH_VERSION:=}"
+# Did the operator NAME a version, or is one about to be derived from the query
+# dialect below? The distinction matters for load records: "9.3.2" or a SereneDB
+# branch is a different index build, whereas "dsl" vs "esql" is two dialects over
+# ONE build. Only an operator-supplied version implies a separate build.
+_version_explicit=no
+[[ -n "$SEARCHBENCH_VERSION" ]] && _version_explicit=yes
 _bargs=("$@")
 for (( _bi=0; _bi<${#_bargs[@]}; _bi++ )); do
     case "${_bargs[_bi]}" in
         --index)           DO_INDEX=yes ;;
         --explain)         DO_EXPLAIN=yes ;;
         --explain-analyze) DO_EXPLAIN_ANALYZE=yes ;;
-        --version)         SEARCHBENCH_VERSION="${_bargs[_bi+1]:-}"; _bi=$((_bi+1)) ;;
-        --version=*)       SEARCHBENCH_VERSION="${_bargs[_bi]#--version=}" ;;
+        --version)         SEARCHBENCH_VERSION="${_bargs[_bi+1]:-}"; _bi=$((_bi+1)); _version_explicit=yes ;;
+        --version=*)       SEARCHBENCH_VERSION="${_bargs[_bi]#--version=}"; _version_explicit=yes ;;
     esac
 done
+
+# Multi-dialect adapters: when an engine ships more than one queries.* file, the
+# extension of the one actually being run IS the variant slug. That way each
+# column states which dialect produced it ("Elasticsearch (dsl)" vs
+# "Elasticsearch (esql)") and each variant lands in its own results file instead
+# of silently overwriting the other. Single-dialect engines stay unlabelled --
+# "Postgres" needs no "(sql)" because there is nothing to disambiguate.
+# ui/build maps a results filename back to its query file by this same
+# convention, so the two stay in step. An explicit --version always wins.
+if [[ -z "$SEARCHBENCH_VERSION" ]]; then
+    _qfiles=()
+    for _q in queries.*; do
+        [[ -f "$_q" && "$_q" != *.bak* ]] && _qfiles+=("$_q")
+    done
+    if (( ${#_qfiles[@]} > 1 )); then
+        SEARCHBENCH_VERSION="${SEARCHBENCH_QUERIES##*.}"
+    fi
+fi
 
 # Column identity + results path. --version label -> distinct UI column and
 # distinct results file (so old/new coexist).
@@ -111,6 +135,32 @@ if [[ -n "$SEARCHBENCH_VERSION" ]]; then
 else
     DISPLAY_SYSTEM="$ENGINE_NAME"
     : "${SEARCHBENCH_RESULTS:=results/${ENGINE_NAME,,}_${SEARCHBENCH_DATASET}.json}"
+fi
+
+# --- index-build identity: where load_time/data_size live --------------------
+# Those two numbers describe an INDEX BUILD, not a query run, so they get their
+# own file rather than being copied into every variant's results JSON. One
+# writer (a --index run), many readers -- so adding a query variant can neither
+# lose the number nor silently duplicate it against a different build.
+#
+#   results/load/<dataset>.json            the engine's default build
+#   results/load/<dataset>.<build>.json    a named build, for side-by-side runs
+#
+# SEARCHBENCH_BUILD names the build. It defaults to an operator-supplied
+# --version (ES image tag, SereneDB branch, a tuning label -- all genuinely
+# different indexes) but NOT to an auto-derived query dialect, because dsl and
+# esql share one index and must therefore share one load record.
+: "${SEARCHBENCH_BUILD:=}"
+if [[ -z "$SEARCHBENCH_BUILD" && "$_version_explicit" == yes ]]; then
+    SEARCHBENCH_BUILD="$SEARCHBENCH_VERSION"
+fi
+LOAD_DIR="results/load"
+LOAD_DEFAULT="${LOAD_DIR}/${SEARCHBENCH_DATASET}.json"
+if [[ -n "$SEARCHBENCH_BUILD" ]]; then
+    _bslug=$(printf '%s' "$SEARCHBENCH_BUILD" | tr -c 'A-Za-z0-9._-' '_')
+    LOAD_RECORD="${LOAD_DIR}/${SEARCHBENCH_DATASET}.${_bslug}.json"
+else
+    LOAD_RECORD="$LOAD_DEFAULT"
 fi
 
 export SEARCHBENCH_DATA_DIR SEARCHBENCH_DATASET
@@ -282,6 +332,43 @@ get_os_name() {
 # Called after load and after EVERY query so a mid-run crash leaves valid JSON
 # (main writes .partial.json, copies to final only at the end). Reads main()'s
 # locals via dynamic scoping. `explains` only when --explain is on.
+# Persist an index build's cost to its own file (see LOAD_RECORD above), with
+# enough provenance to tell two builds apart after the fact. Deliberately no
+# absolute paths: these records are committed to a public repo, and the corpus
+# root is operator-specific noise -- `dataset` already says which corpus it was.
+write_load_record() {
+    local secs="$1" size="$2" ver="$3" os="$4" day="$5"
+    mkdir -p "$LOAD_DIR"
+    jq -n --arg engine   "$ENGINE_NAME"           --arg dataset "$SEARCHBENCH_DATASET" \
+          --arg build    "${SEARCHBENCH_BUILD:-}" --arg ev      "$ver" \
+          --arg os       "$os"                    --arg date    "$day" \
+          --arg loaded_by "$SEARCHBENCH_QUERIES" \
+          --argjson load_time "$secs"             --argjson data_size "$size" \
+          '{engine:$engine, dataset:$dataset, build:$build, engine_version:$ev,
+            load_time:$load_time, data_size:$data_size,
+            os:$os, date:$date, loaded_by:$loaded_by}' \
+        > "$LOAD_RECORD"
+    log "load record -> $LOAD_RECORD"
+}
+
+# Read back a build's cost. Prefer this build's own record; fall back to the
+# engine's default build, which is the case that matters for a query-only
+# variant (esql over the index dsl built). Echoes "<load_time> <data_size>".
+read_load_record() {
+    local f
+    for f in "$LOAD_RECORD" "$LOAD_DEFAULT"; do
+        [[ -f "$f" ]] || continue
+        local lt ds
+        lt=$(jq -c '.load_time // null' "$f" 2>/dev/null || echo null)
+        ds=$(jq -c '.data_size // null' "$f" 2>/dev/null || echo null)
+        [[ "$lt" == "null" ]] && continue
+        log "load record: inherited load_time=${lt}s data_size=${ds} bytes from ${f#results/}"
+        printf '%s %s' "$lt" "$ds"
+        return 0
+    done
+    return 1
+}
+
 write_json() {
     local target="$1"
     local rj="${result_json}"$'\n    ]'
@@ -347,6 +434,15 @@ main() {
     ./start >/dev/null 2>&1 || true
     check_loop
 
+    # Determined before the load so the load record can carry it: which engine
+    # build actually produced these numbers.
+    local version os_name date_str
+    version=$(get_version)
+    os_name=$(get_os_name)
+    date_str=$(date +%F)
+    log "version: $version  os: $os_name  date: $date_str"
+    [[ -n "$SEARCHBENCH_BUILD" ]] && log "build label       : $SEARCHBENCH_BUILD"
+
     local load_secs data_size
     if [[ "$do_index" == yes ]]; then
         if [[ "$SEARCHBENCH_SKIP_DOWNLOAD" != "yes" ]]; then
@@ -371,24 +467,21 @@ main() {
         if [[ "$SEARCHBENCH_MIN_DATA_SIZE" -gt 0 && "$data_size" -lt "$SEARCHBENCH_MIN_DATA_SIZE" ]]; then
             die "data size ${data_size} bytes < min ${SEARCHBENCH_MIN_DATA_SIZE}; treating as partial load"
         fi
+
+        # This run built the index, so it owns the record.
+        write_load_record "$load_secs" "$data_size" "$version" "$os_name" "$date_str"
     else
-        # Query-only: reuse load_time/data_size from the prior results file;
-        # null if none exists.
-        if [[ -f "$SEARCHBENCH_RESULTS" ]]; then
-            load_secs=$(jq -c '.load_time // null' "$SEARCHBENCH_RESULTS" 2>/dev/null || echo null)
-            data_size=$(jq -c '.data_size // null' "$SEARCHBENCH_RESULTS" 2>/dev/null || echo null)
-            log "query-only: carried over load_time=${load_secs}s data_size=${data_size} bytes from ${SEARCHBENCH_RESULTS##*/}"
+        # Query-only: this run built nothing, so it inherits the build's cost from
+        # the load record rather than scavenging another variant's results file.
+        local _lr
+        if _lr=$(read_load_record); then
+            load_secs="${_lr%% *}"
+            data_size="${_lr##* }"
         else
             load_secs=null; data_size=null
-            warn "query-only: no prior ${SEARCHBENCH_RESULTS}; writing null load_time/data_size"
+            warn "no load record under ${LOAD_DIR}/ for ${SEARCHBENCH_DATASET}${SEARCHBENCH_BUILD:+ (build $SEARCHBENCH_BUILD)}; writing null load_time/data_size"
         fi
     fi
-
-    local version os_name date_str
-    version=$(get_version)
-    os_name=$(get_os_name)
-    date_str=$(date +%F)
-    log "version: $version  os: $os_name  date: $date_str"
 
     mkdir -p "$(dirname "$SEARCHBENCH_RESULTS")"
 

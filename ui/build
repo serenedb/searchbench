@@ -10,7 +10,19 @@ cd "$(dirname "$0")/.."   # repo root
 # Query source files in result-row order. Elasticsearch runs a hybrid benchmark;
 # other engines feed one queries.* file read top-to-bottom.
 engine_query_files() {
-    local ed="$1" qf
+    local ed="$1" rf="${2:-}" qf ext base
+    # A --version run writes results/<engine>_<slug>_<dataset>.json. When the
+    # slug names one of the engine's query files (--version=esql <->
+    # queries.esql), that variant ran THAT file -- pick it, so the UI shows the
+    # text actually executed rather than the engine's default dialect.
+    base="${rf##*/}"
+    if [[ -n "$base" ]]; then
+        for qf in "$ed"/queries.*; do
+            [[ -e "$qf" ]] || continue
+            ext="${qf##*/queries.}"
+            [[ "$base" == *"_${ext}_"* ]] && { printf '%s\n' "$qf"; return; }
+        done
+    fi
     # ES has both queries.dsl (the one it runs) and queries.esql (reference);
     # pick .dsl specifically so rows align -- glob would double-count both.
     if [[ -f "$ed/queries.dsl" ]]; then
@@ -29,17 +41,47 @@ engine_query_files() {
 # JSON array of an engine's queries: strip comment (-- # //) and blank lines,
 # keep the rest verbatim in order -- same as the driver.
 queries_json() {
-    local ed="$1" qf
+    local ed="$1" rf="${2:-}" qf
     {
         while IFS= read -r qf; do
             [[ -n "$qf" ]] || continue
             grep -vE '^[[:space:]]*(--|#|//|$)' "$qf" || true
-        done < <(engine_query_files "$ed")
+        done < <(engine_query_files "$ed" "$rf")
     } | jq -Rsc 'split("\n") | map(select(length > 0))'
 }
 
+# {load_time, data_size} from the authoritative load record, or {} if none.
+# The copies inside a results file are a cache stamped at run time; the record in
+# results/load/ is the source of truth, so a corrected record reaches the UI
+# without re-running the benchmark. Precedence matches lib/benchmark.sh: a
+# build-specific record first, then the engine's default build -- which is how a
+# query-only variant (esql over the index dsl built) picks up the right number.
+load_overlay() {
+    local ed="$1" rf="$2" ds base stem slug cand
+    ds=$(jq -r '.dataset // empty' "$rf" 2>/dev/null || true)
+    if [[ -z "$ds" ]]; then printf '{}'; return 0; fi
+    base="$(basename "$rf" .json)"
+    stem="${base%"$ds"}"; stem="${stem%_}"        # <engine>[_<version-slug>]
+    slug="${stem##*_}"
+    [[ "$slug" == "$stem" ]] && slug=""           # no version segment present
+    for cand in "$ed/results/load/${ds}${slug:+.$slug}.json" "$ed/results/load/${ds}.json"; do
+        if [[ -f "$cand" ]]; then
+            jq -c '{load_time, data_size}' "$cand" 2>/dev/null && return 0
+        fi
+    done
+    printf '{}'
+}
+
 shopt -s nullglob
-files=( */results/*.json )
+files=()
+for f in */results/*.json; do
+    # Skip the driver's in-progress snapshot: it flushes <results>.partial.json
+    # after every query so a crash cannot lose the run. Building the UI while a
+    # benchmark is running would otherwise render that half-finished file as a
+    # real engine row, with only the queries completed so far.
+    [[ "$f" == *.partial.json ]] && continue
+    files+=("$f")
+done
 shopt -u nullglob
 
 out="ui/data.js"
@@ -51,8 +93,10 @@ out="ui/data.js"
         [[ $first -eq 0 ]] && printf ',\n'
         first=0
         engine="${f%%/*}"
-        q="$(queries_json "$engine")"
-        jq -c --arg src "$f" --argjson queries "$q" '. + {_source: $src, queries: $queries}' "$f"
+        q="$(queries_json "$engine" "$f")"
+        lo="$(load_overlay "$engine" "$f")"
+        jq -c --arg src "$f" --argjson queries "$q" --argjson load "$lo" \
+           '. + {_source: $src, queries: $queries} + $load' "$f"
         # Warn (don't fail) on query/result count mismatch -- usually a parse gap.
         rlen=$(jq '.result | length' "$f")
         qlen=$(printf '%s' "$q" | jq 'length')
