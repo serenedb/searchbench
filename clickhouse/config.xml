@@ -1,0 +1,30 @@
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <log>/mnt/data/mkornaukhov/public-sb/clickhouse/clickhouse_data/clickhouse-server.log</log>
+        <errorlog>/mnt/data/mkornaukhov/public-sb/clickhouse/clickhouse_data/clickhouse-server.err.log</errorlog>
+        <size>100M</size>
+        <count>3</count>
+    </logger>
+
+    <listen_host>127.0.0.1</listen_host>
+    <tcp_port>9000</tcp_port>
+    <http_port>8123</http_port>
+
+    <path>/mnt/data/mkornaukhov/public-sb/clickhouse/clickhouse_data/</path>
+    <tmp_path>/mnt/data/mkornaukhov/public-sb/clickhouse/clickhouse_data/tmp/</tmp_path>
+    <user_files_path>/mnt/data/mkornaukhov/public-sb/clickhouse/clickhouse_data/user_files/</user_files_path>
+    <format_schema_path>/mnt/data/mkornaukhov/public-sb/clickhouse/clickhouse_data/format_schemas/</format_schema_path>
+
+    <mark_cache_size>5368709120</mark_cache_size>
+
+    <users_config>users.xml</users_config>
+    <default_profile>default</default_profile>
+    <default_database>default</default_database>
+
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>

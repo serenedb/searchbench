@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# CH_BACKEND=docker shim. benchmark.sh sets CLICKHOUSE_BIN to this script, so
+# every adapter invocation -- `"$CLICKHOUSE_BIN" client --host 127.0.0.1 --port
+# 9000 ...`, including ./load's `... FORMAT Parquet" < part.parquet` -- runs the
+# clickhouse multi-tool INSIDE the server container against its own localhost.
+# `-i` forwards stdin so the host parquet streams in; stdout/stderr (incl. the
+# `--time` line ./query parses) pass straight back.
+exec docker exec -i "${CH_CONTAINER:-searchbench-clickhouse}" clickhouse "$@"

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Create the otel_logs table (+ text index) and ingest the corpus.
+#
+# Globs $SEARCHBENCH_DATA_DIR/part_*.parquet and INSERTs each with FORMAT Parquet
+# (name-matched columns, exactly as TextBench does), up to $CH_LOAD_WORKERS files
+# in parallel. How many rows live there is decided upstream by the download step
+# (a small sliced part_000.parquet for smoke scales, full parts otherwise).
+#
+# The text index is built synchronously as part of each INSERT, so this
+# blocks until the data + index are durable -- which is what the driver
+# times for load_time.
+set -euo pipefail
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${CLICKHOUSE_BIN:=./clickhouse}"
+: "${CH_HOST:=127.0.0.1}"
+: "${CH_TCP_PORT:=9000}"
+: "${CH_INDEX_SETTING:=enable_full_text_index=1}"
+: "${CH_LOAD_WORKERS:=}"
+
+CH=( "$CLICKHOUSE_BIN" client --host "$CH_HOST" --port "$CH_TCP_PORT" "--$CH_INDEX_SETTING" )
+
+echo "==> creating schema"
+"${CH[@]}" --multiquery < create.sql
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob
+parquet=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#parquet[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+# file('parquet/...') resolves relative to user_files_path. On the docker path
+# ./start bind-mounts the corpus there; running the binary natively there is no
+# mount, so link it. Without this the INSERT matches no files, inserts 0 rows,
+# and reports success -- the queries then run against an empty table.
+: "${CH_DATA_DIR:=${PWD}/clickhouse_data}"
+mkdir -p "${CH_DATA_DIR}/user_files"
+ln -sfn "$SEARCHBENCH_DATA_DIR" "${CH_DATA_DIR}/user_files/parquet"
+
+# ./start mounts $SEARCHBENCH_DATA_DIR read-only into the container's
+# user_files_path at /var/lib/clickhouse/user_files/parquet, so file() reads it
+# server-side. Ingest with ONE INSERT..SELECT FROM file() -- ClickBench's
+# pattern: ClickHouse reads the parquet natively with parallel readers, with NO
+# client-side streaming through the docker-exec pipe (much faster on the big
+# single-file scales). SELECT * EXCEPT (TimestampTime) drops the corpus's extra
+# column; the remaining 15 map positionally onto otel_logs' columns (Timestamp
+# ns -> DateTime is cast on insert). The text index builds as part of the INSERT.
+echo "==> ingesting ${#parquet[@]} file(s) via server-side file('parquet/part_*.parquet')"
+"${CH[@]}" --query \
+    "INSERT INTO otel_logs SELECT * EXCEPT (TimestampTime) FROM file('parquet/part_*.parquet', Parquet)"
+
+rows=$("${CH[@]}" --query "SELECT count() FROM otel_logs")
+echo "==> load done: ${rows} rows"

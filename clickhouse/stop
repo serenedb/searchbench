@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Stop clickhouse-server. Tolerant: returns 0 even when nothing is running.
+#
+# Approach: try the pid file first (cheap, exact when we spawned the
+# process), then fall back to whoever is bound to $CH_TCP_PORT via ss, and
+# finally pkill by the config-file we launch with.
+set -euo pipefail
+
+: "${CH_TCP_PORT:=9000}"
+: "${CH_BACKEND:=binary}"
+: "${CH_CONTAINER:=searchbench-clickhouse}"
+
+if [[ "$CH_BACKEND" == docker ]]; then
+    docker inspect "$CH_CONTAINER" >/dev/null 2>&1 && docker stop --time 30 "$CH_CONTAINER" >/dev/null 2>&1 || true
+    exit 0
+fi
+
+kill_pid() {
+    local pid="$1"
+    [[ -n "$pid" ]] || return 0
+    kill -0 "$pid" 2>/dev/null || return 0
+    kill "$pid" 2>/dev/null || true
+    for _ in $(seq 1 30); do
+        kill -0 "$pid" 2>/dev/null || return 0
+        sleep 1
+    done
+    kill -9 "$pid" 2>/dev/null || true
+}
+
+pid_from_port() {
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltnpH "sport = :$CH_TCP_PORT" 2>/dev/null \
+            | grep -oP 'pid=\K[0-9]+' | head -1
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser -n tcp "$CH_TCP_PORT" 2>/dev/null | tr -d '\t' | awk '{print $1}'
+    fi
+}
+
+if [[ -f .clickhouse.pid ]]; then
+    kill_pid "$(cat .clickhouse.pid)"
+    rm -f .clickhouse.pid
+fi
+
+# Belt-and-suspenders: anything still bound to the port must go too --
+# covers operator-started instances and stale-pid-file races.
+pid=$(pid_from_port || true)
+kill_pid "${pid:-}"
+
+# Last resort: our own server invocation, identified by its config file.
+pkill -f "clickhouse server.*config-file=${PWD}/config.xml" 2>/dev/null || true
+
+exit 0

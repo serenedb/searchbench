@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# One-time setup for the ClickHouse engine adapter. Runs before every
+# benchmark, so this is also where we ensure a clean datadir -- leaving a
+# previous run's parts behind would short-circuit ./load and the next
+# benchmark would report a bogus near-instant load_time.
+#
+# Provisioning:
+#   CLICKHOUSE_BIN   path to a clickhouse binary. If unset we use ./clickhouse
+#                    if present, else fetch the single static binary from
+#                    https://clickhouse.com/ into this directory.
+#
+# Optional env:
+#   CH_DATA_DIR      where clickhouse-server stores its datadir
+#                    (default: ${PWD}/clickhouse_data)
+set -euo pipefail
+
+: "${CLICKHOUSE_BIN:=./clickhouse}"
+: "${CH_DATA_DIR:=${PWD}/clickhouse_data}"
+: "${CH_BACKEND:=binary}"
+: "${CH_IMAGE:=clickhouse/clickhouse-server:latest}"
+: "${CH_CONTAINER:=searchbench-clickhouse}"
+
+command -v jq >/dev/null || { echo "jq not found on PATH" >&2; exit 1; }
+
+# Docker backend: no local binary -- pull the image, and start from a clean
+# container + datadir so load_time reflects a real ingest+index build.
+if [[ "$CH_BACKEND" == docker ]]; then
+    echo "ClickHouse backend: docker ($CH_IMAGE)"
+    docker rm -f "$CH_CONTAINER" >/dev/null 2>&1 || true
+    # The clickhouse entrypoint chowns the bind-mount to its own uid, so wipe it
+    # via a throwaway root container (a host rm would hit EPERM).
+    if [[ -d "$CH_DATA_DIR" ]]; then
+        docker run --rm --entrypoint sh -v "${CH_DATA_DIR}:/data" "$CH_IMAGE" \
+            -c 'rm -rf /data/..?* /data/.[!.]* /data/*' >/dev/null 2>&1 || true
+    fi
+    docker pull "$CH_IMAGE" >/dev/null
+    echo "Adapter ready (docker). Run ./start to launch."
+    exit 0
+fi
+
+# Resolve / fetch the clickhouse binary. The official one-liner drops a
+# self-contained `clickhouse` binary into the current directory; both the
+# server and the client are sub-commands of it (clickhouse server /
+# clickhouse client).
+if [[ ! -x "$CLICKHOUSE_BIN" ]]; then
+    if [[ "$CLICKHOUSE_BIN" == "./clickhouse" ]]; then
+        echo "clickhouse binary not found; fetching the static build into ${PWD}" >&2
+        curl -fsSL https://clickhouse.com/ | sh
+        [[ -x ./clickhouse ]] || { echo "download did not produce ./clickhouse" >&2; exit 1; }
+    else
+        echo "CLICKHOUSE_BIN is set but not executable: $CLICKHOUSE_BIN" >&2
+        exit 1
+    fi
+fi
+echo "using clickhouse binary: $CLICKHOUSE_BIN"
+
+# Kill any leftover server from a prior aborted run before we wipe its
+# datadir -- otherwise the next ./start sees the port in use and skips the
+# spawn, leaving us connected to the stale daemon with stale catalog state.
+./stop >/dev/null 2>&1 || true
+
+# Wipe any leftover datadir from a prior run. The runner re-loads the corpus
+# and rebuilds the text index from scratch each invocation, which is the only
+# way load_time reflects real work.
+if [[ -d "$CH_DATA_DIR" ]]; then
+    rm -rf "$CH_DATA_DIR"
+fi
+
+# Generated runtime config + stale pid from a Ctrl-C'd previous run can
+# mislead ./start / ./stop; clear them while we're already wiping state.
+rm -f "${PWD}/config.xml" "${PWD}/users.xml" "${PWD}/.clickhouse.pid"

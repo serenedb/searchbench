@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Print the running ClickHouse version. The shared driver picks this up via
+# its `[[ -x ./version ]]` check and records it in the result JSON.
+set -euo pipefail
+: "${CLICKHOUSE_BIN:=./clickhouse}"
+: "${CH_HOST:=127.0.0.1}"
+: "${CH_TCP_PORT:=9000}"
+"$CLICKHOUSE_BIN" client --host "$CH_HOST" --port "$CH_TCP_PORT" \
+    --query 'SELECT version()' 2>/dev/null | head -n1 | tr -d '\r'

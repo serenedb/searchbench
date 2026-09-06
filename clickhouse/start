@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# Start clickhouse-server in the background. Idempotent: if a server is
+# already answering on $CH_TCP_PORT we just return without spawning a
+# duplicate.
+#
+# A non-root local server needs a custom config: the stock config writes to
+# /var/lib/clickhouse and /var/log/clickhouse-server, which we can't touch.
+# We regenerate config.xml + users.xml here (absolute paths under
+# $CH_DATA_DIR) so ./start is self-healing after an ./install wipe.
+set -euo pipefail
+
+: "${CLICKHOUSE_BIN:=./clickhouse}"
+: "${CH_HOST:=127.0.0.1}"
+: "${CH_TCP_PORT:=9000}"
+: "${CH_HTTP_PORT:=8123}"
+: "${CH_DATA_DIR:=${PWD}/clickhouse_data}"
+: "${CH_LOG:=${PWD}/clickhouse-server.log}"
+: "${CH_BACKEND:=binary}"
+: "${CH_IMAGE:=clickhouse/clickhouse-server:latest}"
+: "${CH_CONTAINER:=searchbench-clickhouse}"
+
+# Docker backend: run the official image with host networking (server binds
+# host :$CH_TCP_PORT / :$CH_HTTP_PORT). The client runs inside the container via
+# the ch-exec wrapper, so no host clickhouse binary is needed. Data is a host
+# bind-mount at $CH_DATA_DIR (under /mnt/data); ./install wipes it via a root
+# container. Idempotent.
+if [[ "$CH_BACKEND" == docker ]]; then
+    if docker inspect "$CH_CONTAINER" >/dev/null 2>&1; then
+        docker start "$CH_CONTAINER" >/dev/null
+    else
+        mkdir -p "$CH_DATA_DIR"
+        # Mount the corpus dir read-only under the container's user_files_path so
+        # ./load can ingest via server-side file('parquet/part_*.parquet') (the
+        # ClickBench INSERT..SELECT FROM file() pattern -- no client streaming).
+        # Only when SEARCHBENCH_DATA_DIR is set (the driver roots it per-dataset).
+        pq_mount=()
+        [[ -n "${SEARCHBENCH_DATA_DIR:-}" && -d "${SEARCHBENCH_DATA_DIR:-}" ]] && \
+            pq_mount=(-v "${SEARCHBENCH_DATA_DIR}:/var/lib/clickhouse/user_files/parquet:ro")
+        # Run as the host user so the bind-mount stays host-owned (not uid 101 /
+        # "messagebus"); CLICKHOUSE_SKIP_USER_SETUP stops the entrypoint's
+        # root-only user/chown setup, which is unneeded when we supply --user.
+        docker run -d --name "$CH_CONTAINER" --network host \
+            --user "$(id -u):$(id -g)" \
+            -e CLICKHOUSE_SKIP_USER_SETUP=1 \
+            --ulimit nofile=262144:262144 \
+            -v "${CH_DATA_DIR}:/var/lib/clickhouse" \
+            "${pq_mount[@]}" \
+            "$CH_IMAGE" >/dev/null
+    fi
+    for _ in $(seq 1 60); do
+        ./check >/dev/null 2>&1 && { echo "ClickHouse up on :${CH_TCP_PORT} (docker)"; exit 0; }
+        sleep 1
+    done
+    echo "ClickHouse (docker) did not become ready within 60s" >&2
+    docker logs --tail 40 "$CH_CONTAINER" 2>&1 >&2 || true
+    exit 1
+fi
+
+# Already up? (covers an operator-started instance too.) ./stop falls back to
+# a port-based lookup, so we don't need a pid file in that case.
+if "$CLICKHOUSE_BIN" client --host "$CH_HOST" --port "$CH_TCP_PORT" \
+        --query 'SELECT 1' >/dev/null 2>&1; then
+    exit 0
+fi
+
+mkdir -p "$CH_DATA_DIR"
+
+cat > "${PWD}/users.xml" <<'XML'
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Result caching off for every connection, not just the driver's.
+                 use_query_cache is already 0 by default in this build; pinning
+                 it here means a future default flip cannot silently turn the
+                 benchmark into a cache lookup. Verified by A/B: one query
+                 repeated gives 0.036, 0.030, 0.030s while a textually different
+                 but equivalent query gives 0.035s, i.e. no collapse on repeat.
+                 Block caches (mark_cache, OS page cache) stay ON: every engine
+                 here has those, and disabling them would measure the disk
+                 rather than the engine. -->
+            <use_query_cache>0</use_query_cache>
+            <enable_reads_from_query_cache>0</enable_reads_from_query_cache>
+            <enable_writes_to_query_cache>0</enable_writes_to_query_cache>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>127.0.0.1</ip>
+                <ip>::1</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </default>
+    </users>
+    <quotas>
+        <default/>
+    </quotas>
+</clickhouse>
+XML
+
+cat > "${PWD}/config.xml" <<XML
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <log>${CH_DATA_DIR}/clickhouse-server.log</log>
+        <errorlog>${CH_DATA_DIR}/clickhouse-server.err.log</errorlog>
+        <size>100M</size>
+        <count>3</count>
+    </logger>
+
+    <listen_host>${CH_HOST}</listen_host>
+    <tcp_port>${CH_TCP_PORT}</tcp_port>
+    <http_port>${CH_HTTP_PORT}</http_port>
+
+    <path>${CH_DATA_DIR}/</path>
+    <tmp_path>${CH_DATA_DIR}/tmp/</tmp_path>
+    <user_files_path>${CH_DATA_DIR}/user_files/</user_files_path>
+    <format_schema_path>${CH_DATA_DIR}/format_schemas/</format_schema_path>
+
+    <mark_cache_size>5368709120</mark_cache_size>
+
+    <users_config>users.xml</users_config>
+    <default_profile>default</default_profile>
+    <default_database>default</default_database>
+
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
+XML
+
+# Discard any stale pid -- about to replace it.
+rm -f "${PWD}/.clickhouse.pid"
+
+"$CLICKHOUSE_BIN" server --config-file="${PWD}/config.xml" > "$CH_LOG" 2>&1 &
+echo $! > "${PWD}/.clickhouse.pid"
