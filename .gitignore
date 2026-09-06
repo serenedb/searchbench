@@ -48,6 +48,7 @@ cratedb/crate_data/
 meilisearch/meili-data/
 
 
+quickwit/qw-data/
 clickhouse/clickhouse
 clickhouse/clickhouse_data/
 clickhouse/*.log

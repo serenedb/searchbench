@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Launch Quickwit container; idempotent via ./check
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${QW_PORT:=7280}"
+: "${QW_DATA_DIR:=${PWD}/qw-data}"
+: "${QW_IMAGE:=quickwit/quickwit:0.9.0}"
+: "${QW_CONTAINER:=searchbench-quickwit}"
+
+if ./check >/dev/null 2>&1; then echo "Quickwit already up on :${QW_PORT}"; exit 0; fi
+mkdir -p "$QW_DATA_DIR"; chmod a+rwX "$QW_DATA_DIR" 2>/dev/null || true
+
+if docker inspect "$QW_CONTAINER" >/dev/null 2>&1 \
+   && [[ "$(docker inspect -f '{{.Config.Image}}' "$QW_CONTAINER")" != "$QW_IMAGE" ]]; then
+    echo "container was built from a different image; recreating for ${QW_IMAGE}"
+    docker rm -f "$QW_CONTAINER" >/dev/null
+fi
+if docker inspect "$QW_CONTAINER" >/dev/null 2>&1; then
+    docker start "$QW_CONTAINER" >/dev/null
+else
+    # nofile: same lesson as the typesense adapter -- a descriptor-starved
+    # server hangs rather than crashing, which a liveness check cannot see.
+    # config/quickwit.yaml is mounted so the node config is part of the adapter
+    # rather than of a hand-created container. The recorded 100m run used it.
+    docker run -d --name "$QW_CONTAINER" --network host \
+        --ulimit nofile=65535:65535 \
+        -e QW_DISABLE_TELEMETRY=1 \
+        -e "QW_LISTEN_ADDRESS=0.0.0.0" \
+        -v "${QW_DATA_DIR}:/quickwit/qwdata" \
+        -v "${PWD}/config/quickwit.yaml:/quickwit/config/quickwit.yaml:ro" \
+        "$QW_IMAGE" run >/dev/null
+fi
+for _ in $(seq 1 180); do
+    if ./check >/dev/null 2>&1; then echo "Quickwit up on :${QW_PORT} (backend=docker)"; exit 0; fi
+    sleep 1
+done
+echo "Quickwit did not become healthy within 180s." >&2
+docker logs --tail 50 "$QW_CONTAINER" 2>&1 >&2 || true
+exit 1

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${QW_PORT:=7280}"
+curl -fsS "http://127.0.0.1:${QW_PORT}/api/v1/version" 2>/dev/null \
+  | python3 -c "import sys,json;print(json.load(sys.stdin).get('build',{}).get('version') or json.load(sys.stdin).get('version','unknown'))" 2>/dev/null || echo unknown

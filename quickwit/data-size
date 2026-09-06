@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# On-disk bytes of the Quickwit data dir (split files + metastore).
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${QW_DATA_DIR:=${PWD}/qw-data}"
+du -s --block-size=1 "$QW_DATA_DIR" | cut -f1

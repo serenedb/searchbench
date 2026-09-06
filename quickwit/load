@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Recreate the index and bulk-ingest the corpus through the ES-compatible API.
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set}"
+: "${QW_PORT:=7280}"; : "${QW_INDEX:=otel_logs}"
+Q="http://127.0.0.1:${QW_PORT}"
+
+if [[ "${SEARCHBENCH_SKIP_LOAD:-no}" == "yes" ]]; then
+    echo "[load] SEARCHBENCH_SKIP_LOAD=yes, leaving index as-is"; exit 0
+fi
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob; files=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet ); shopt -u nullglob
+[[ ${#files[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+echo "[load] recreating index ${QW_INDEX}"
+curl -fsS -X DELETE "$Q/api/v1/indexes/${QW_INDEX}" >/dev/null 2>&1 || true
+sleep 2
+curl -fsS -X POST "$Q/api/v1/indexes" -H 'Content-Type: application/json' \
+     --data-binary @config/index_config.json >/dev/null
+
+QW_URL="$Q" QW_INDEX="$QW_INDEX" \
+  "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py --local-dir "$SEARCHBENCH_DATA_DIR" --files "${#files[@]}"
+
+# Quickwit commits on a timer (commit_timeout_secs in the index config), so
+# freshly-posted documents are not searchable the instant the bulk call returns.
+# Wait until the count is STABLE ACROSS SEVERAL POLLS -- two equal readings are
+# not enough, because a commit landing between polls produces a false plateau
+# (that reported 858,000 of 1,000,000 as "settled").
+echo "[load] waiting for commit to settle"
+expected=$("${SEARCHBENCH_PYTHON:-python3}" - "$SEARCHBENCH_DATA_DIR" <<'PY'
+import sys, glob, pyarrow.parquet as pq
+print(sum(pq.ParquetFile(f).metadata.num_rows for f in sorted(glob.glob(sys.argv[1] + "/part_*.parquet"))))
+PY
+)
+last=-1; stable=0; n=0
+for _ in $(seq 1 240); do
+    n=$(curl -fsS -X POST "$Q/api/v1/_elastic/${QW_INDEX}/_search" -H 'Content-Type: application/json' \
+        --data-binary '{"query":{"match_all":{}},"size":0,"track_total_hits":true}' 2>/dev/null \
+        | "${SEARCHBENCH_PYTHON:-python3}" -c "
+import sys,json
+try:
+    t=json.load(sys.stdin).get('hits',{}).get('total',{}); print(t.get('value',0) if isinstance(t,dict) else t)
+except Exception: print(0)")
+    if [[ "$n" == "$last" ]]; then stable=$((stable+1)); else stable=0; fi
+    [[ "$stable" -ge 6 && "$n" != "0" ]] && break
+    last="$n"; sleep 5
+done
+
+# Quickwit's ingest v2 pipeline DROPS records under concurrent bulk load while
+# still returning HTTP 200 with errors:false and no per-item error -- 16
+# concurrent requests lost 10.4% of the corpus, visible only as
+# "failed to fetch records from ingester" in the server log. Neither the status
+# code nor the response body is evidence the data landed, so verify the count
+# and fail loudly rather than benchmarking a partial corpus.
+if [[ "$n" != "$expected" ]]; then
+    echo "[load] ERROR: indexed ${n} documents, expected ${expected} (lost $((expected-n)))." >&2
+    echo "[load]        Quickwit drops records under concurrent bulk load; lower" >&2
+    echo "[load]        SEARCHBENCH_LOAD_PROCESSES / --bulk-workers and retry." >&2
+    exit 1
+fi
+echo "[load] ${QW_INDEX} documents=${n}"

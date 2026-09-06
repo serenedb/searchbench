@@ -1,0 +1,27 @@
+# Node config for the benchmark. This file IS mounted by ./start and the
+# recorded 100m run used it.
+#
+# Note what it does NOT do: raising the ingest queue does not stop the silent
+# document loss under concurrent bulk load. Measured on 1m, 4 concurrent
+# requests: 858,000 indexed on the default 2GiB queue, 830,000 with the 32GiB
+# queue below -- i.e. slightly worse, and it also suppressed the
+# "failed to fetch records from ingester" warnings that were the only
+# client-visible hint. The queue was never the bottleneck; the per-shard
+# throughput limit is. Serial ingest is the actual fix (see README).
+#
+# The settings are kept because they are what the published numbers were
+# measured under, not because they are a recommendation.
+version: 0.8
+ingest_api:
+  max_queue_memory_usage: 32GiB
+  max_queue_disk_usage: 64GiB
+  content_length_limit: 32MiB
+searcher:
+  # Quickwit caches whole aggregation/search RESULTS keyed on the exact query
+  # body (default 64M). The driver runs each query 3x and reports min(try2,try3),
+  # so with the cache on, every reported "hot" number is a cache lookup rather
+  # than a query: Q67 measured 115ms cold, then 2ms forever after, and a
+  # semantically identical query with its clauses reordered went back to 29ms.
+  # That inflated the whole suite by 10.2x (4.09s -> 0.40s). Disabled so the
+  # benchmark measures query execution, like the engines that have no such cache.
+  partial_request_cache_capacity: 0

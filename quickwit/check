@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${QW_PORT:=7280}"
+curl -fsS --max-time 3 -o /dev/null "http://127.0.0.1:${QW_PORT}/health/livez"
