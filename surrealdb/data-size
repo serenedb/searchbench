@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# On-disk bytes: documents + indexes, measured from the RocksDB directory.
+#
+# SurrealDB exposes no size API (INFO FOR DB lists definitions, not bytes), so
+# this is a du of -storageDataPath. That covers exactly what the engine stores to
+# serve the workload -- data plus the FULLTEXT index -- which is the same
+# accounting as the other adapters, just measured from the filesystem.
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${SURREAL_DATA_DIR:=${PWD}/surreal-data}"
+du -sb "$SURREAL_DATA_DIR" | cut -f1

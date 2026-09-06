@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Recreate the table + FULLTEXT index and bulk-ingest the parquet corpus.
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${SURREAL_PORT:=8000}"
+: "${SURREAL_DATA_DIR:=${PWD}/surreal-data}"
+: "${SURREAL_NS:=bench}"; : "${SURREAL_DB:=logs}"
+: "${SURREAL_USER:=root}"; : "${SURREAL_PASS:=root}"
+S="http://127.0.0.1:${SURREAL_PORT}"
+
+if [[ "${SEARCHBENCH_SKIP_LOAD:-no}" == "yes" ]]; then
+    echo "[load] SEARCHBENCH_SKIP_LOAD=yes, leaving data as-is"; exit 0
+fi
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob; files=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet ); shopt -u nullglob
+[[ ${#files[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+sql() { curl -fsS -X POST "$S/sql" -u "${SURREAL_USER}:${SURREAL_PASS}" \
+        -H 'Accept: application/json' -H 'Content-Type: text/plain' --data-binary "$1"; }
+
+# Start from an empty store so load time and data size describe this corpus only.
+# SurrealDB has no fast "drop everything"; wiping the RocksDB directory is the
+# equivalent of the other adapters' DROP/recreate.
+echo "[load] clearing store at $SURREAL_DATA_DIR"
+./stop
+docker run --rm -v "${SURREAL_DATA_DIR}:/d" alpine sh -c 'rm -rf /d/* /d/.[!.]* 2>/dev/null' || true
+./start >/dev/null
+
+echo "[load] defining namespace/database, analyzer, schema and indexes"
+sql "DEFINE NAMESPACE ${SURREAL_NS}; USE NS ${SURREAL_NS}; DEFINE DATABASE ${SURREAL_DB};" >/dev/null
+# TOKENIZERS class splits on Unicode character-class changes and FILTERS
+# lowercase matches the reference analyzer (verified: 'Failed to place order' ->
+# ['failed','to','place','order']). No stemming: the reference does not stem.
+#
+# The Timestamp VALUE cast is load-bearing. Plain JSON strings stay strings and
+# every range predicate then compares text; `TYPE datetime` rejects the insert
+# outright. `VALUE <datetime>$value` coerces on write (verified: a 30-minute
+# window selects 1 of 2 rows, and type::is_datetime is true).
+sql "USE NS ${SURREAL_NS} DB ${SURREAL_DB};
+     DEFINE ANALYZER otel TOKENIZERS class FILTERS lowercase;
+     DEFINE TABLE otel_logs SCHEMALESS;
+     DEFINE FIELD Timestamp ON otel_logs VALUE (<datetime>\$value);" >/dev/null
+# HIGHLIGHTS stores term positions. Kept even though phrase queries are rebuilt
+# with a string::matches prefilter rather than a phrase operator, because the
+# index-side cost is the honest configuration for a full-text index.
+sql "USE NS ${SURREAL_NS} DB ${SURREAL_DB};
+     DEFINE INDEX body_fts ON otel_logs FIELDS Body FULLTEXT ANALYZER otel BM25 HIGHLIGHTS;
+     DEFINE INDEX svc_idx  ON otel_logs FIELDS ServiceName;
+     DEFINE INDEX ts_idx   ON otel_logs FIELDS Timestamp;
+     DEFINE INDEX sev_idx  ON otel_logs FIELDS SeverityNumber;" >/dev/null
+
+SURREAL_URL="$S" SURREAL_NS="$SURREAL_NS" SURREAL_DB="$SURREAL_DB" \
+SURREAL_USER="$SURREAL_USER" SURREAL_PASS="$SURREAL_PASS" \
+  "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py --local-dir "$SEARCHBENCH_DATA_DIR" --files "${#files[@]}"
+
+n=$(sql "USE NS ${SURREAL_NS} DB ${SURREAL_DB}; SELECT count() FROM otel_logs GROUP ALL;" \
+    | "${SEARCHBENCH_PYTHON:-python3}" -c "
+import sys,json
+try: print(json.load(sys.stdin)[-1]['result'][0]['count'])
+except Exception: print('unknown')")
+echo "[load] otel_logs rows=${n}"

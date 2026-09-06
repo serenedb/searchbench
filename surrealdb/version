@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Print running SurrealDB version; labels results JSON
+set -euo pipefail
+: "${SURREAL_PORT:=8000}"
+curl -fsS "http://127.0.0.1:${SURREAL_PORT}/version" 2>/dev/null \
+  | sed -n 's/^surrealdb-\([0-9.]*\).*/\1/p' | grep . || echo unknown

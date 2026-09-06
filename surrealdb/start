@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Launch SurrealDB container; idempotent via ./check
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${SURREAL_PORT:=8000}"
+: "${SURREAL_DATA_DIR:=${PWD}/surreal-data}"
+: "${SURREAL_IMAGE:=surrealdb/surrealdb:v3.2.4}"
+: "${SURREAL_CONTAINER:=searchbench-surreal}"
+: "${SURREAL_USER:=root}"
+: "${SURREAL_PASS:=root}"
+
+if ./check >/dev/null 2>&1; then echo "SurrealDB already up on :${SURREAL_PORT}"; exit 0; fi
+mkdir -p "$SURREAL_DATA_DIR"; chmod a+rwX "$SURREAL_DATA_DIR" 2>/dev/null || true
+
+if docker inspect "$SURREAL_CONTAINER" >/dev/null 2>&1 \
+   && [[ "$(docker inspect -f '{{.Config.Image}}' "$SURREAL_CONTAINER")" != "$SURREAL_IMAGE" ]]; then
+    echo "container was built from a different image; recreating for ${SURREAL_IMAGE}"
+    docker rm -f "$SURREAL_CONTAINER" >/dev/null
+fi
+if docker inspect "$SURREAL_CONTAINER" >/dev/null 2>&1; then
+    docker start "$SURREAL_CONTAINER" >/dev/null
+else
+    docker run -d --name "$SURREAL_CONTAINER" --network host \
+        -v "${SURREAL_DATA_DIR}:/data" \
+        "$SURREAL_IMAGE" start --user "$SURREAL_USER" --pass "$SURREAL_PASS" \
+        --bind "0.0.0.0:${SURREAL_PORT}" rocksdb:/data/db >/dev/null
+fi
+for _ in $(seq 1 180); do
+    if ./check >/dev/null 2>&1; then echo "SurrealDB up on :${SURREAL_PORT} (backend=docker)"; exit 0; fi
+    sleep 1
+done
+echo "SurrealDB did not become healthy within 180s." >&2
+docker logs --tail 50 "$SURREAL_CONTAINER" 2>&1 >&2 || true
+exit 1

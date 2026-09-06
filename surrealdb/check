@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Exit 0 when SurrealDB answers on $SURREAL_PORT; non-zero otherwise.
+# /health returns 200 with an EMPTY body, so this tests curl's exit status --
+# an earlier version appended `; echo OK` to cope with the empty body, which
+# made the test unconditionally true and let ./start skip a dead server.
+set -euo pipefail
+: "${SURREAL_PORT:=8000}"
+curl -fsS --max-time 3 -o /dev/null "http://127.0.0.1:${SURREAL_PORT}/health"
