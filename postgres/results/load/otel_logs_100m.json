@@ -1,0 +1,15 @@
+{
+  "engine": "Postgres",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "18.4",
+  "load_time": 1299.69,
+  "data_size": 111333089280,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-08-06",
+  "data_dir": null,
+  "loaded_by": null,
+  "backfilled_from": [
+    "postgres/results/postgres_otel_logs_100m.json"
+  ]
+}
