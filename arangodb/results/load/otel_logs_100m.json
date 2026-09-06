@@ -1,0 +1,15 @@
+{
+  "engine": "ArangoDB",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "3.12.9-4",
+  "load_time": 1125.321,
+  "data_size": 59708284928,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-07-29",
+  "data_dir": null,
+  "loaded_by": null,
+  "backfilled_from": [
+    "arangodb/results/arangodb_otel_logs_100m.json"
+  ]
+}
