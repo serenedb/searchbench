@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Launch YDB. Idempotent via ./check.
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${YDB_GRPC_PORT:=2136}"
+: "${YDB_MON_PORT:=8765}"
+# 26.3.1.8, not :latest -- `latest` is 26.1.1.22, which has no fulltext index.
+: "${YDB_IMAGE:=ydbplatform/local-ydb:26.3.1.8}"
+: "${YDB_CONTAINER:=searchbench-ydb}"
+: "${YDB_STAGE_DIR:=/mnt/data/mkornaukhov/data/ydb-stage}"
+# /ydb_data MUST be a host mount on a big filesystem. Left inside the container
+# it lands on the docker root fs; at 100M that filled / and the server died with
+# a PDisk "No space left on device" VERIFY, after first degrading to ~80 KiB/s.
+: "${YDB_DATA_DIR:=/mnt/data/mkornaukhov/data/ydb-data}"
+
+if ./check >/dev/null 2>&1; then echo "YDB already up on :${YDB_GRPC_PORT}"; exit 0; fi
+
+if docker inspect "$YDB_CONTAINER" >/dev/null 2>&1; then
+    docker start "$YDB_CONTAINER" >/dev/null
+else
+    mkdir -p "$YDB_STAGE_DIR" "$YDB_DATA_DIR" 2>/dev/null || true
+    chmod 777 "$YDB_DATA_DIR" 2>/dev/null || true
+    # enable_fulltext_index must be snake_case: the CamelCase form is accepted by
+    # the CLI but rejected by the config parser, and the server dies at startup
+    # with `unknown field "EnableFulltextIndex" for NKikimrConfig.TFeatureFlags`.
+    docker run -d --name "$YDB_CONTAINER" --network host \
+        -e GRPC_PORT="$YDB_GRPC_PORT" -e MON_PORT="$YDB_MON_PORT" \
+        -e YDB_USE_IN_MEMORY_PDISKS=false \
+        -v "${YDB_STAGE_DIR}:/stage:ro" \
+        -v "${YDB_DATA_DIR}:/ydb_data" \
+        "$YDB_IMAGE" --enable-feature-flag enable_fulltext_index >/dev/null
+fi
+
+wait_healthy() {
+    for _ in $(seq 1 300); do
+        ./check >/dev/null 2>&1 && return 0
+        sleep 1
+    done
+    return 1
+}
+
+wait_healthy || { echo "YDB did not become healthy within 300s." >&2
+                  docker logs --tail 50 "$YDB_CONTAINER" >&2 2>&1 || true; exit 1; }
+
+# --- on the 64GiB PDisk cap ----------------------------------------------
+# `local_ydb deploy` always formats a 64GiB PDisk file and exposes no size knob.
+# Confirmed dead ends: YDB_TINY_MODE=false (still 64GiB); pre-creating a larger
+# file (deploy truncates it back); making that file immutable (deploy dies with
+# PermissionError); growing the file after format (capacity lives in the format
+# record, so the server still reports 64GiB).
+#
+# `ydbd admin bs disk obliterate` + restart DOES reformat at the full file size
+# (verified TotalSize=400GiB), and so does running ydbd directly against a large
+# file -- but both destroy the domain's storage pools, which only
+# `local_ydb deploy` knows how to bootstrap. The database then rejects every
+# CREATE TABLE with "database doesn't have storage pools at all". `pools add`
+# cannot repair it either: /local is the domain root, not a tenant, so ydbd
+# answers "Database '/local' doesn't exist".
+#
+# Net: this image tops out at 64GiB, which bounds the corpus that fits. Lifting
+# it needs a hand-authored multi-PDisk static config run against ydbd directly,
+# bypassing local_ydb entirely. Do NOT reintroduce an obliterate-based resize
+# here: it produces a cluster that looks healthy and cannot create tables.
+
+for _ in $(seq 1 1); do
+    if ./check >/dev/null 2>&1; then echo "YDB up on :${YDB_GRPC_PORT}"; exit 0; fi
+done
+echo "YDB did not become healthy within 300s." >&2
+docker logs --tail 50 "$YDB_CONTAINER" >&2 2>&1 || true
+exit 1

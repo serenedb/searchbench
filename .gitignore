@@ -54,6 +54,8 @@ meilisearch/meili-data/
 typesense/ts-data/
 
 quickwit/qw-data/
+ydb/ydb-data/
+ydb/stage/
 clickhouse/clickhouse
 clickhouse/clickhouse_data/
 clickhouse/*.log

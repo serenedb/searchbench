@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Server version from the monitoring page: the image tag is not proof of what ran.
+set -euo pipefail
+: "${YDB_MON_PORT:=8765}"
+v=$(curl -s -m 5 "http://127.0.0.1:${YDB_MON_PORT}/ver" 2>/dev/null \
+    | sed 's/<[^>]*>/ /g' | grep -oE 'tags/[0-9][0-9.]*' | head -1 | sed 's|tags/||') || v=""
+echo "${v:-unknown}"

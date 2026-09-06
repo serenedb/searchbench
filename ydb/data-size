@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# On-disk size of the YDB working directory inside the container.
+set -euo pipefail
+: "${YDB_CONTAINER:=searchbench-ydb}"
+# Blocks actually allocated, NOT apparent size: the PDisk is a sparse 64GiB
+# preallocated file, so `du -sb` (which implies --apparent-size) reports 68.7GB
+# for every corpus regardless of how much is stored. `du -s --block-size=1`
+# counts real blocks -- 49GB for 10M rows against the same 68.7GB apparent.
+size=$(docker exec "$YDB_CONTAINER" du -s --block-size=1 /ydb_data 2>/dev/null | awk '{print $1}')
+echo "${size:-0}"
