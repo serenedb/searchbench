@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 : "${ES_DATA_DIR:=${PWD}/es-data}"
-: "${ES_IMAGE:=docker.elastic.co/elasticsearch/elasticsearch:9.3.2}"
+: "${ES_IMAGE:=docker.elastic.co/elasticsearch/elasticsearch:9.5.0}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 

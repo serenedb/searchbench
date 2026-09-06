@@ -1,0 +1,186 @@
+-- Elasticsearch ES|QL tagged workload, aligned 1:1 with serenedb (Q01-Q92).
+
+-- Q01 task=count filter=term freq=hi
+FROM otel_logs | WHERE MATCH(Body, "error") | STATS count()
+-- Q02 task=count filter=term freq=lo
+FROM otel_logs | WHERE MATCH(Body, "payment") | STATS count()
+-- Q03 task=count filter=and freq=hi (AND, 2 tokens)
+FROM otel_logs | WHERE MATCH(Body, "failed order", {"operator": "and"}) | STATS count()
+-- Q04 task=count filter=and freq=hi (AND, 4 tokens)
+FROM otel_logs | WHERE MATCH(Body, "failed charge card cache", {"operator": "and"}) | STATS count()
+-- Q05 task=count filter=and freq=lo (AND, 8 tokens)
+FROM otel_logs | WHERE MATCH(Body, "failed send order confirmation email service expected post", {"operator": "and"}) | STATS count()
+-- Q06 task=count filter=or freq=hi (OR, 2 tokens)
+FROM otel_logs | WHERE MATCH(Body, "error failed", {"operator": "or"}) | STATS count()
+-- Q07 task=count filter=or freq=hi (OR, 4 tokens)
+FROM otel_logs | WHERE MATCH(Body, "connection request conversion post", {"operator": "or"}) | STATS count()
+-- Q08 task=count filter=or freq=mid (OR, 8 tokens)
+FROM otel_logs | WHERE MATCH(Body, "payment exception refused send confirmation email expected deadline", {"operator": "or"}) | STATS count()
+-- Q09 task=count filter=or,minmatch freq=hi (>=2 of 4)
+FROM otel_logs | WHERE MATCH(Body, "error failed charge cache", {"minimum_should_match": 2}) | STATS count()
+-- Q10 task=count filter=phrase freq=mid (phrase, 2 tokens)
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "place order") | STATS count()
+-- Q11 task=count filter=phrase freq=mid (phrase, 4 tokens)
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "failed to place order") | STATS count()
+-- Q12 task=count filter=phrase freq=lo (phrase, 8 tokens)
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "post to email service expected 200 got 500") | STATS count()
+-- Q13 task=count filter=phrase,proximity freq=hi (failed within 2 of order)
+FROM otel_logs | WHERE QSTR("Body:\"failed order\"~2") | STATS count()
+-- Q14 task=count filter=phrase,or freq=hi (phrase OR term)
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "failed to place order") OR MATCH(Body, "charge") | STATS count()
+-- Q15 task=count filter=phrase,and freq=mid (phrase AND term)
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "failed to place order") AND MATCH(Body, "charge") | STATS count()
+-- Q16 task=count filter=regexp freq=hi (charg.*)
+FROM otel_logs | WHERE QSTR("Body:/charg.*/") | STATS count()
+-- Q17 task=count filter=regexp freq=hi (ord.*)
+FROM otel_logs | WHERE QSTR("Body:/ord.*/") | STATS count()
+-- Q18 task=count filter=regexp freq=mid (conn.*)
+FROM otel_logs | WHERE QSTR("Body:/conn.*/") | STATS count()
+-- Q19 task=count filter=regexp freq=hi (single-char wildcard mid: c.che -> cache)
+FROM otel_logs | WHERE QSTR("Body:/c.che/") | STATS count()
+-- Q20 task=count filter=prefix freq=mid (conn)
+FROM otel_logs | WHERE QSTR("Body:conn*") | STATS count()
+-- Q21 task=count filter=prefix freq=hi (charg)
+FROM otel_logs | WHERE QSTR("Body:charg*") | STATS count()
+-- Q22 task=count filter=fuzzy freq=mid (levenshtein distance 1)
+FROM otel_logs | WHERE QSTR("Body:connection~1") | STATS count()
+-- Q23 task=count filter=fuzzy freq=mid (levenshtein distance 2)
+FROM otel_logs | WHERE QSTR("Body:connection~2") | STATS count()
+-- Q24 task=count filter=fuzzy,prefix freq=mid (levenshtein-2 AND prefix, same 'conn' root)
+FROM otel_logs | WHERE QSTR("Body:connection~2") AND QSTR("Body:conn*") | STATS count()
+-- Q25 task=count filter=like freq=mid (prefix wildcard conn%)
+FROM otel_logs | WHERE QSTR("Body:conn*") | STATS count()
+-- Q26 task=count filter=like freq=hi (suffix wildcard %tion)
+FROM otel_logs | WHERE QSTR("Body:*tion") | STATS count()
+-- Q27 task=count filter=like freq=mid (middle wildcard %nnec%)
+FROM otel_logs | WHERE QSTR("Body:*nnec*") | STATS count()
+-- Q28 task=count filter=and,negation freq=hi (error but NOT cache)
+FROM otel_logs | WHERE MATCH(Body, "error") AND NOT MATCH(Body, "cache") | STATS count()
+-- Q29 task=count filter=or,negation freq=hi (error/failed, excluding charge)
+FROM otel_logs | WHERE MATCH(Body, "error failed", {"operator": "or"}) AND NOT MATCH(Body, "charge") | STATS count()
+-- Q30 task=count filter=term,window freq=hi (term + Timestamp BETWEEN 6h)
+FROM otel_logs | WHERE MATCH(Body, "error") AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | STATS count()
+-- Q31 task=count filter=and,window freq=hi (term + service + Timestamp BETWEEN 6h)
+FROM otel_logs | WHERE MATCH(Body, "failed") AND ServiceName == "frontend" AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | STATS count()
+-- Q32 task=count filter=or,window freq=mid (8-token OR within a BETWEEN 6h window)
+FROM otel_logs | WHERE MATCH(Body, "payment exception refused send confirmation email expected deadline", {"operator": "or"}) AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | STATS count()
+-- Q33 task=top_k filter=term freq=hi
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "charge") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q34 task=top_k filter=term freq=mid
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "connection") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q35 task=top_k filter=term freq=lo
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "payment") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q36 task=top_k filter=and freq=hi (AND, 2 tokens)
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "failed order", {"operator": "and"}) | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q37 task=top_k filter=and freq=hi (AND, 4 tokens)
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "failed charge card cache", {"operator": "and"}) | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q38 task=top_k filter=and freq=lo (AND, 8 tokens)
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "failed send order confirmation email service expected post", {"operator": "and"}) | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q39 task=top_k filter=or freq=hi (OR, 2 tokens)
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "error failed", {"operator": "or"}) | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q40 task=top_k filter=or freq=hi (OR, 4 tokens)
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "connection request conversion post", {"operator": "or"}) | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q41 task=top_k filter=or freq=mid (OR, 8 tokens)
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "payment exception refused send confirmation email expected deadline", {"operator": "or"}) | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q42 task=top_k filter=or,minmatch freq=hi (>=2 of 4)
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "error failed charge cache", {"minimum_should_match": 2}) | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q43 task=top_k filter=phrase freq=mid (phrase, 2 tokens)
+FROM otel_logs METADATA _score | WHERE MATCH_PHRASE(Body, "place order") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q44 task=top_k filter=phrase freq=mid (phrase, 4 tokens)
+FROM otel_logs METADATA _score | WHERE MATCH_PHRASE(Body, "failed to place order") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q45 task=top_k filter=phrase freq=lo (phrase, 8 tokens)
+FROM otel_logs METADATA _score | WHERE MATCH_PHRASE(Body, "post to email service expected 200 got 500") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q46 task=top_k filter=regexp freq=mid (conn.*)
+FROM otel_logs METADATA _score | WHERE QSTR("Body:/conn.*/") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q47 task=top_k filter=prefix freq=hi (charg)
+FROM otel_logs METADATA _score | WHERE QSTR("Body:charg*") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q48 task=top_k filter=fuzzy freq=mid (levenshtein distance 1)
+FROM otel_logs METADATA _score | WHERE QSTR("Body:connection~1") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q49 task=top_k filter=fuzzy freq=mid (levenshtein distance 2)
+FROM otel_logs METADATA _score | WHERE QSTR("Body:connection~2") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q50 task=top_k filter=like freq=mid (prefix wildcard conn%)
+FROM otel_logs METADATA _score | WHERE QSTR("Body:conn*") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q51 task=top_k filter=phrase,or freq=hi (phrase OR term)
+FROM otel_logs METADATA _score | WHERE MATCH_PHRASE(Body, "failed to place order") OR MATCH(Body, "charge") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q52 task=top_k filter=and,negation freq=hi (error but NOT cache)
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "error") AND NOT MATCH(Body, "cache") | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q53 task=top_k filter=and,window freq=hi (term + service + Timestamp BETWEEN 6h)
+FROM otel_logs METADATA _score | WHERE MATCH(Body, "charge") AND ServiceName == "payment" AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | SORT _score DESC | KEEP Timestamp, ServiceName, Body | LIMIT 100
+-- Q54 task=group_by filter=or freq=hi (key=SeverityText, ordered)
+FROM otel_logs | WHERE MATCH(Body, "error failed", {"operator": "or"}) | STATS cnt = COUNT() BY SeverityText | SORT cnt DESC
+-- Q55 task=group_by filter=term freq=hi (key=SeverityText, ordered)
+FROM otel_logs | WHERE MATCH(Body, "charge") | STATS cnt = COUNT() BY SeverityText | SORT cnt DESC
+-- Q56 task=group_by filter=and freq=hi (key=SeverityText, NO order by)
+FROM otel_logs | WHERE MATCH(Body, "failed order", {"operator": "and"}) | STATS cnt = COUNT() BY SeverityText
+-- Q57 task=group_by filter=or freq=hi (key=ScopeName, top 20 ordered)
+FROM otel_logs | WHERE MATCH(Body, "error failed", {"operator": "or"}) | STATS cnt = COUNT() BY ScopeName | SORT cnt DESC | LIMIT 20
+-- Q58 task=group_by filter=regexp freq=hi (key=ScopeName)
+FROM otel_logs | WHERE QSTR("Body:/charg.*/") | STATS cnt = COUNT() BY ScopeName | SORT cnt DESC | LIMIT 20
+-- Q59 task=group_by filter=fuzzy freq=mid (key=ScopeName)
+FROM otel_logs | WHERE QSTR("Body:connection~1") | STATS cnt = COUNT() BY ScopeName | SORT cnt DESC | LIMIT 20
+-- Q60 task=group_by filter=or freq=hi (key=ScopeName, NO order by)
+FROM otel_logs | WHERE MATCH(Body, "error failed", {"operator": "or"}) | STATS cnt = COUNT() BY ScopeName
+-- Q61 task=group_by filter=term freq=hi (key=minute)
+FROM otel_logs | WHERE MATCH(Body, "error") | STATS cnt = COUNT() BY minute = BUCKET(Timestamp, 1 MINUTE) | SORT minute ASC
+-- Q62 task=group_by filter=and freq=hi (key=minute)
+FROM otel_logs | WHERE MATCH(Body, "failed order", {"operator": "and"}) | STATS cnt = COUNT() BY minute = BUCKET(Timestamp, 1 MINUTE) | SORT minute ASC
+-- Q63 task=group_by filter=phrase freq=mid (key=minute)
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "failed to place order") | STATS cnt = COUNT() BY minute = BUCKET(Timestamp, 1 MINUTE) | SORT minute ASC
+-- Q64 task=group_by filter=or freq=hi (key=minute)
+FROM otel_logs | WHERE MATCH(Body, "error failed charge", {"operator": "or"}) | STATS cnt = COUNT() BY minute = BUCKET(Timestamp, 1 MINUTE) | SORT minute ASC
+-- Q65 task=group_by filter=term freq=hi (key=minute, NO order by)
+FROM otel_logs | WHERE MATCH(Body, "error") | STATS cnt = COUNT() BY minute = BUCKET(Timestamp, 1 MINUTE)
+-- Q66 task=group_by filter=and freq=hi (key=SeverityText, Body term + indexed service)
+FROM otel_logs | WHERE MATCH(Body, "failed") AND ServiceName == "frontend" | STATS cnt = COUNT() BY SeverityText | SORT cnt DESC
+-- Q67 task=group_by filter=or freq=hi (two keys: SeverityText, ScopeName)
+FROM otel_logs | WHERE MATCH(Body, "error failed", {"operator": "or"}) | STATS cnt = COUNT() BY SeverityText, ScopeName | SORT cnt DESC | LIMIT 20
+-- Q68 task=recent filter=and,window freq=hi (recent failed-order logs from checkout)
+FROM otel_logs | WHERE MATCH(Body, "failed order", {"operator": "and"}) AND ServiceName == "checkout" AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | SORT Timestamp DESC | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q69 task=recent filter=or,window freq=hi (recent error/failed/charge, severity>=warn)
+FROM otel_logs | WHERE MATCH(Body, "error failed charge", {"operator": "or"}) AND SeverityNumber >= 13 AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | SORT Timestamp DESC | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q70 task=recent filter=term,window freq=hi (recent error logs in a 6h window)
+FROM otel_logs | WHERE MATCH(Body, "error") AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | SORT Timestamp DESC | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q71 task=recent filter=phrase,window freq=mid (recent 'failed to place order')
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "failed to place order") AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | SORT Timestamp DESC | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q72 task=recent filter=and,window freq=hi (recent payment charges)
+FROM otel_logs | WHERE MATCH(Body, "charge") AND ServiceName == "payment" AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | SORT Timestamp DESC | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q73 task=recent filter=window (pure time-series tail: recent cart logs, no text search)
+FROM otel_logs | WHERE ServiceName == "cart" AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | SORT Timestamp DESC | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q74 task=recent filter=regexp,window freq=hi (recent charg* logs in a 6h window)
+FROM otel_logs | WHERE QSTR("Body:/charg.*/") AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | SORT Timestamp DESC | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q75 task=recent filter=or,window freq=mid (recent connection/request/conversion logs)
+FROM otel_logs | WHERE MATCH(Body, "connection request conversion", {"operator": "or"}) AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | SORT Timestamp DESC | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q76 task=recent filter=and,window freq=hi (checkout failed&order, NO order by)
+FROM otel_logs | WHERE MATCH(Body, "failed order", {"operator": "and"}) AND ServiceName == "checkout" AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q77 task=recent filter=or,window freq=hi (error/failed/charge sev>=warn, NO order by)
+FROM otel_logs | WHERE MATCH(Body, "error failed charge", {"operator": "or"}) AND SeverityNumber >= 13 AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q78 task=recent filter=term,window freq=hi (error 6h, NO order by)
+FROM otel_logs | WHERE MATCH(Body, "error") AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q79 task=recent filter=phrase,window freq=mid (failed to place order 6h, NO order by)
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "failed to place order") AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q80 task=recent filter=and,window freq=hi (payment charges, NO order by)
+FROM otel_logs | WHERE MATCH(Body, "charge") AND ServiceName == "payment" AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q81 task=recent filter=window (cart tail, NO order by, no text search)
+FROM otel_logs | WHERE ServiceName == "cart" AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q82 task=recent filter=regexp,window freq=hi (charg.* 6h, NO order by)
+FROM otel_logs | WHERE QSTR("Body:/charg.*/") AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T06:00:00" | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q83 task=recent filter=or,window freq=mid (connection/request/conversion, NO order by)
+FROM otel_logs | WHERE MATCH(Body, "connection request conversion", {"operator": "or"}) AND Timestamp >= "2025-09-23T00:00:00" AND Timestamp <= "2025-09-23T00:30:00" | KEEP Timestamp, ServiceName, SeverityText, Body | LIMIT 100
+-- Q84 task=join filter=term freq=hi (frontend 'failed' traces that also involve payment)
+FROM otel_logs | WHERE ServiceName == "frontend" AND MATCH(Body, "failed") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS traces = COUNT_DISTINCT(TraceId)
+-- Q85 task=join filter=or freq=hi
+FROM otel_logs | WHERE MATCH(Body, "error failed", {"operator": "or"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS traces = COUNT_DISTINCT(TraceId)
+-- Q86 task=join filter=phrase freq=mid
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "failed to place order") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS traces = COUNT_DISTINCT(TraceId)
+-- Q87 task=join filter=regexp freq=hi
+FROM otel_logs | WHERE QSTR("Body:/charg.*/") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS traces = COUNT_DISTINCT(TraceId)
+-- Q88 task=join filter=and freq=hi (failed&order traces that also involve cart)
+FROM otel_logs | WHERE MATCH(Body, "failed order", {"operator": "and"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_cart == true | STATS traces = COUNT_DISTINCT(TraceId)
+-- Q89 task=join filter=or freq=mid
+FROM otel_logs | WHERE MATCH(Body, "connection request", {"operator": "or"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS traces = COUNT_DISTINCT(TraceId)
+-- Q90 task=join filter=and freq=hi
+FROM otel_logs | WHERE MATCH(Body, "charge request", {"operator": "and"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS traces = COUNT_DISTINCT(TraceId)
+-- Q91 task=join filter=term freq=hi
+FROM otel_logs | WHERE MATCH(Body, "order") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS traces = COUNT_DISTINCT(TraceId)
+-- Q92 task=join filter=prefix freq=hi
+FROM otel_logs | WHERE QSTR("Body:charg*") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS traces = COUNT_DISTINCT(TraceId)

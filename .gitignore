@@ -9,6 +9,7 @@ serenedb/serened.pid
 serenedb/serenedb_metrics.txt
 
 elastic/es-data/
+elastic/es-data-100m/
 elastic/es-smoke/
 
 opensearch/os-data/

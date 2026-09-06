@@ -1,0 +1,17 @@
+{
+  "engine": "Elasticsearch",
+  "dataset": "otel_logs_1b",
+  "build": "",
+  "engine_version": "9.5.0",
+  "load_time": 12188.835,
+  "data_size": 163893648013,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-08-08",
+  "data_dir": null,
+  "loaded_by": null,
+  "backfilled_from": [
+    "elastic/results/elasticsearch_dsl_otel_logs_1b.json",
+    "elastic/results/elasticsearch_esql_otel_logs_1b.json"
+  ],
+  "data_size_note": "includes trace_lookup; re-measured after data-size was changed to sum all non-system indices"
+}

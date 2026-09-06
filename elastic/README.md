@@ -33,7 +33,7 @@ automatically via `--ulimit memlock=-1:-1`.
 | `ES_PORT` | `9201` | HTTP port |
 | `ES_HEAP` | `30g` | JVM heap (via `ES_JAVA_OPTS`) |
 | `ES_DATA_DIR` | `${PWD}/es-data` | data + logs |
-| `ES_IMAGE` | `…/elasticsearch:9.3.2` | image |
+| `ES_IMAGE` | `…/elasticsearch:9.5.0` | image |
 | `ES_CONTAINER` | `searchbench-es` | container |
 
 ## Hand-running queries
