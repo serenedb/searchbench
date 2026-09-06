@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Exit 0 once CrateDB answers a trivial query.
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_env.sh
+curl -fsS -X POST "${CRATE_URL}/_sql" -H 'Content-Type: application/json' \
+     -d '{"stmt":"SELECT 1"}' >/dev/null 2>&1

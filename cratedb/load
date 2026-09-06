@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Build the OTel-logs table and its fulltext index in CrateDB.
+#
+# CrateDB can't read parquet, so a throwaway serened container reads it (embeds
+# DuckDB) and streams NDJSON into ingest.py, which POSTs concurrent bulk
+# INSERTs. The fulltext index is declared in the schema, so all index work
+# happens during INSERT -- there is no separate build phase.
+#
+# Phases: (1) schema, (2) ingest, (3) REFRESH + ANALYZE.
+#
+# Deliberately NO force-merge. No other Lucene adapter here merges after load --
+# elastic, opensearch, elastic-columnar and serenedb all leave segments as they
+# fall -- so merging would measure CrateDB in a state nothing else is measured
+# in: compacted on disk, and with whatever segment-level parallelism the engine
+# has at query time collapsed away.
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_env.sh
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+
+log() { printf '%s\n' "$*" >&2; }
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob
+parquet=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#parquet[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+# --- column projection --------------------------------------------------------
+# CrateDB TIMESTAMP WITH TIME ZONE is millisecond resolution, so emit epoch_ms.
+# The corpus column is TIMESTAMPTZ_NS; cast via ::TIMESTAMP_NS first (the same
+# cast serenedb/queries.sql uses) -- a direct ::TIMESTAMP cast is unimplemented
+# for that source type. The MAP columns land as native JSON objects, which
+# OBJECT(IGNORED) consumes directly.
+read -r -d '' SELECT_COLS <<'SQL' || true
+  epoch_ms(timestamp::TIMESTAMP_NS) AS ts,
+  traceid                          AS trace_id,
+  spanid                           AS span_id,
+  traceflags                       AS trace_flags,
+  severitytext                     AS severity_text,
+  severitynumber                   AS severity_number,
+  servicename                      AS service_name,
+  body                             AS body,
+  resourceschemaurl                AS resource_schema_url,
+  resourceattributes               AS resource_attributes,
+  scopeschemaurl                   AS scope_schema_url,
+  scopename                        AS scope_name,
+  scopeversion                     AS scope_version,
+  scopeattributes                  AS scope_attributes,
+  logattributes                    AS log_attributes
+SQL
+
+# COPY .. TO '/dev/stdout' streams row groups; a plain `-jsonlines -c SELECT`
+# would buffer the whole result set. preserve_insertion_order=false stops the
+# parallel parquet reader buffering to reassemble input order (unbounded at
+# 100M+ rows); ingestion order is irrelevant here.
+convert_sql="SET preserve_insertion_order=false; COPY (SELECT ${SELECT_COLS} FROM read_parquet('${SEARCHBENCH_DATA_DIR}/part_*.parquet')) TO '/dev/stdout' (FORMAT json);"
+
+# --- phase 1: schema ----------------------------------------------------------
+log "[schema] creating ${CRATE_TABLE} with fulltext index"
+crate_sql "DROP TABLE IF EXISTS ${CRATE_TABLE}" >/dev/null
+# Cluster-scoped and idempotent: re-running CREATE ANALYZER is a no-op.
+crate_sql "$(grep -v '^--' create_analyzer.sql)" >/dev/null
+crate_sql "$(grep -v '^--' create_table.sql)"    >/dev/null
+
+# --- phase 2: ingest ----------------------------------------------------------
+log "[ingest] serened (parquet) --NDJSON--> ${WORKERS:-8} concurrent bulk INSERTs"
+export CRATE_URL CRATE_TABLE
+serened_shell "$convert_sql" | "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py
+
+# --- phase 3: settle ----------------------------------------------------------
+# REFRESH makes inserted rows visible. ANALYZE recalculates the statistics the
+# planner uses -- CrateDB documents it as a post-import step, and without it the
+# 92 queries are planned with no statistics at all. It is the direct analogue of
+# the Postgres-family adapters' VACUUM ANALYZE, which they all run.
+log "[refresh] REFRESH TABLE ${CRATE_TABLE}"
+crate_sql "REFRESH TABLE ${CRATE_TABLE}" >/dev/null
+log "[analyze] ANALYZE"
+crate_sql "ANALYZE" >/dev/null
+
+rows=$(crate_sql "SELECT count(*) FROM ${CRATE_TABLE}" | jq -r '.rows[0][0] // 0')
+[[ "${rows:-0}" -gt 0 ]] || { echo "${CRATE_TABLE} is empty after load" >&2; exit 1; }
+log "[load] ${CRATE_TABLE} row count: ${rows}"

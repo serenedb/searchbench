@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Launch the CrateDB container; idempotent (early-return if ./check passes).
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_env.sh
+
+if ./check >/dev/null 2>&1; then
+    echo "CrateDB already up on :${CRATE_HTTP_PORT}"
+    exit 0
+fi
+
+mkdir -p "$CRATE_DATA_DIR"
+
+# Drop a container built from a different image, so a CRATE_IMAGE bump actually
+# takes effect -- the plain `docker start` below would keep the old version.
+if docker inspect "$CRATE_CONTAINER" >/dev/null 2>&1 \
+   && [[ "$(docker inspect -f '{{.Config.Image}}' "$CRATE_CONTAINER")" != "$CRATE_IMAGE" ]]; then
+    echo "container was built from a different image; recreating for ${CRATE_IMAGE}"
+    docker rm -f "$CRATE_CONTAINER" >/dev/null
+fi
+
+if docker inspect "$CRATE_CONTAINER" >/dev/null 2>&1; then
+    docker start "$CRATE_CONTAINER" >/dev/null
+else
+    # --network host: no NAT; CrateDB binds 4200 (HTTP) and 5432 (pg wire).
+    docker run -d \
+        --name "$CRATE_CONTAINER" \
+        --network host \
+        -v "${CRATE_DATA_DIR}:/data" \
+        -e "CRATE_HEAP_SIZE=${CRATE_HEAP}" \
+        --ulimit memlock=-1:-1 \
+        --ulimit nofile=65535:65535 \
+        "$CRATE_IMAGE" \
+        -Cdiscovery.type=single-node \
+        -Chttp.port="${CRATE_HTTP_PORT}" >/dev/null
+fi
+
+for _ in $(seq 1 180); do
+    if ./check >/dev/null 2>&1; then
+        echo "CrateDB up on :${CRATE_HTTP_PORT} (backend=docker)"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "CrateDB did not become healthy within 180s." >&2
+docker logs --tail 50 "$CRATE_CONTAINER" 2>&1 >&2 || true
+exit 1

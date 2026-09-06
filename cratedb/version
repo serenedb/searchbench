@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Print the running CrateDB version; "unknown" on failure.
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_env.sh
+v=$(curl -fsS "${CRATE_URL}/" 2>/dev/null | jq -r '.version.number // empty') || v=""
+echo "${v:-unknown}"

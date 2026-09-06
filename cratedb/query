@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Run one query against CrateDB; timing on stderr.
+#
+# Contract: stdin = one SQL statement; stdout = result rows; stderr LAST line =
+# elapsed seconds. CrateDB's /_sql returns `duration` (ms) measured server-side,
+# but the driver compares engines on client round-trip, so use curl's
+# %{time_total} like the other HTTP adapters.
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_env.sh
+
+stmt=$(cat)
+stmt="${stmt%;}"                      # /_sql rejects a trailing semicolon
+
+resp=$(curl -fsS -w '\n%{time_total}' -X POST "${CRATE_URL}/_sql" \
+    -H 'Content-Type: application/json' \
+    --data-binary "$(jq -nc --arg stmt "$stmt" '{stmt:$stmt}')")
+rt=$(printf '%s\n' "$resp" | tail -n1)
+body=$(printf '%s\n' "$resp" | sed '$d')
+
+if printf '%s' "$body" | jq -e '.error' >/dev/null 2>&1; then
+    printf '%s\n' "$body" | jq -r '.error.message' >&2
+    exit 1
+fi
+
+printf '%s' "$body" | jq -c '.rows[]? // empty'
+printf '%s\n' "$rt" >&2
