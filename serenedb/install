@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-: "${SERENED_IMAGE:=serenedb/serenedb:26.07.5}"
+: "${SERENED_IMAGE:=serenedb/serenedb:26.09.0}"
 : "${SERENED_CONTAINER:=searchbench-serenedb}"
 : "${SERENED_DATA_DIR:=${PWD}/serened_data}"
 
@@ -14,7 +14,16 @@ command -v jq     >/dev/null || { echo "jq not on PATH"     >&2; exit 1; }
 docker info >/dev/null 2>&1  || { echo "docker daemon not reachable" >&2; exit 1; }
 
 echo "SereneDB backend: docker ($SERENED_IMAGE)"
-docker pull --quiet "$SERENED_IMAGE" >/dev/null
+# Pull only what we do not already have. An unreleased build -- `docker build` of
+# a main checkout, or a `docker load` of one saved elsewhere -- exists locally and
+# nowhere else, and `docker pull` fails outright on a tag no registry serves,
+# which under `set -e` would abort the run before it started. Present locally is
+# reason enough; a published tag still gets pulled on first use.
+if docker image inspect "$SERENED_IMAGE" >/dev/null 2>&1; then
+    echo "  using local image (not pulling)"
+else
+    docker pull --quiet "$SERENED_IMAGE" >/dev/null
+fi
 
 docker rm -f "$SERENED_CONTAINER" >/dev/null 2>&1 || true
 # Fully remove the bind-mount datadir (subdirs owned by the image uid) via a

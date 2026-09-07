@@ -1,21 +1,25 @@
--- Don't preserve parquet row order while ingesting. The search table reads the
--- whole otel_logs view (read_parquet) and doesn't need rows in file order;
--- letting the engine process/insert out of order cuts memory and speeds up the
--- large loads. Applies for the whole psql session below.
+-- BACKUP. This was the schema before the corpus moved into a search table;
+-- create.sql is what runs now and ./load is hardwired to it. Kept for reference
+-- -- point ./load here by hand to run it.
+--
+-- Don't preserve parquet row order while building the index. The inverted-index
+-- build reads the whole otel_logs view (read_parquet) and doesn't need rows in
+-- file order; letting the engine process/insert out of order cuts memory and
+-- speeds up the large index builds. Applies for the whole psql session below.
 SET preserve_insertion_order = false;
 
--- otel_logs_idx may exist as either a TABLE (from a prior `load` run) or an
--- INDEX (left by the older create_view.sql schema). `DROP TABLE IF EXISTS` errors with
--- "is not a table" when the relation is an index, and vice versa — IF EXISTS
--- only suppresses the missing-relation case, not the wrong-kind case.
--- Temporarily disabling ON_ERROR_STOP lets whichever DROP applies actually run.
+-- otel_logs may exist as either a TABLE (from a prior `load` run) or a VIEW
+-- (from a prior `load_view` run). `DROP TABLE IF EXISTS` errors with "is not
+-- a table" when the relation is a view, and vice versa — IF EXISTS only
+-- suppresses the missing-relation case, not the wrong-kind case. Temporarily
+-- disabling ON_ERROR_STOP lets whichever DROP applies actually run.
 \set ON_ERROR_STOP off
 DROP INDEX IF EXISTS otel_logs_idx;
-DROP TABLE IF EXISTS otel_logs_idx;
 DROP VIEW IF EXISTS otel_logs CASCADE;
 \set ON_ERROR_STOP on
 
 DROP TEXT SEARCH DICTIONARY IF EXISTS en;
+DROP TEXT SEARCH DICTIONARY IF EXISTS alnum_lower;
 
 -- Tokenization is done by the SQL function ts_split_by_non_alpha(Body, true):
 -- it lowercases (the `true` = to_lower) and splits on runs of non-alphanumeric
@@ -36,10 +40,6 @@ CREATE TEXT SEARCH DICTIONARY en (
     position  = true         -- token positions (phrase queries; enlarges the index)
 );
 
--- The parquet is only the source to ingest FROM — unlike create_view.sql, where
--- this view is what the index is built on and what queries read. Column aliases
--- are identical to that file so both schemas present the same names to
--- queries.sql and the workload never has to change.
 CREATE VIEW otel_logs AS
 SELECT
     timestamp as Timestamp,
@@ -59,19 +59,32 @@ SELECT
     logattributes as LogAttributes
 FROM read_parquet(:'parquet_glob');
 
-CREATE TABLE otel_logs_idx
-WITH (
-    storage = 'search',
-    refresh_interval    = 10000,
-    compaction_interval = 5000,
-    optimize_top_k = 'bm25(1.2, 0.75)'
-) AS
-SELECT * FROM otel_logs WHERE false;
-
-CREATE INDEX otel_logs_search_inv ON otel_logs_idx USING inverted(
+-- Body is tokenized by ts_split_by_non_alpha(Body, true) at index-build time.
+-- Queries match the SAME expression: `ts_split_by_non_alpha(Body, true) @@ ...`
+-- against the index relation otel_logs_idx (an IRESEARCH_SCAN binds the @@ to
+-- this indexed expression; a plain scan of the otel_logs view would seq-scan).
+CREATE INDEX otel_logs_idx ON otel_logs USING inverted(
     (ts_split_by_non_alpha(Body, true)) en
+)
+INCLUDE (
+    Timestamp,
+    TraceId,
+    SpanId,
+    TraceFlags,
+    SeverityText,
+    SeverityNumber,
+    ServiceName,
+    Body,
+    ResourceSchemaUrl,
+    ResourceAttributes,
+    ScopeSchemaUrl,
+    ScopeName,
+    ScopeVersion,
+    ScopeAttributes,
+    LogAttributes)
+WITH (
+    store_pk = 'none',
+    optimize_top_k = 'bm25(1.2, 0.75)',
+    refresh_interval   = 10000,
+    compaction_interval = 5000
 );
-
-INSERT INTO otel_logs_idx SELECT * FROM otel_logs;
-
-VACUUM (REFRESH_TABLE) otel_logs_idx;
