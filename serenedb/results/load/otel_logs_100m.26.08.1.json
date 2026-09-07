@@ -1,0 +1,11 @@
+{
+  "engine": "SereneDB",
+  "dataset": "otel_logs_100m",
+  "build": "26.08.1",
+  "engine_version": "26.08.1",
+  "load_time": 51.225,
+  "data_size": 11217117173,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-09-06",
+  "loaded_by": "queries.sql"
+}
