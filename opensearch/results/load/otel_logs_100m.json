@@ -3,9 +3,9 @@
   "dataset": "otel_logs_100m",
   "build": "",
   "engine_version": "3.8.0",
-  "load_time": 841.105,
-  "data_size": 16736287893,
+  "load_time": 942.723,
+  "data_size": 14736257748,
   "os": "Ubuntu 24.04.4 LTS",
-  "date": "2026-08-09",
+  "date": "2026-09-07",
   "loaded_by": "queries.dsl"
 }
