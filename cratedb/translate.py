@@ -156,6 +156,22 @@ def leaf(node):
             # truncates. 'conn' returned 79 rows against Elasticsearch's
             # 1,344,366 until it was raised. 0 is rejected, so it must be a
             # finite bound large enough for the widest prefix in the corpus.
+            #
+            # The flip side of an exhaustive expansion is that phrase_prefix
+            # expands into BooleanQuery clauses, and Lucene caps those at 8192.
+            # At 100m every prefix here stays under the cap; at 1b 'conn' and
+            # 'charg' cross it and the query dies with
+            #   TooManyClauses[maxClauseCount is set to 8192]
+            # which the driver records as a null, i.e. a silent failure. So
+            # cratedb/start raises indices.query.bool.max_clause_count above
+            # MAX_EXPANSIONS. Keep the two in step: bumping MAX_EXPANSIONS past
+            # that ceiling reintroduces the 1b failure.
+            #
+            # LIKE is not a substitute, despite looking like one. ES's
+            # prefix/wildcard match any *token* with the prefix, while LIKE
+            # anchors on the whole log line: at 1b `body LIKE 'conn%'` returns 0
+            # and `body LIKE '%conn%'` returns 19,447,319, against ES's
+            # 19,554,788 -- untokenized and case-sensitive where ES lowercases.
             return (f"MATCH(body_ft, {q(lit)}) USING phrase_prefix "
                     f"WITH (max_expansions = {MAX_EXPANSIONS})")
         # Infix/suffix patterns (c.che, *tion, *nnec*) have no index-backed form

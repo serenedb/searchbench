@@ -23,6 +23,21 @@ if docker inspect "$CRATE_CONTAINER" >/dev/null 2>&1; then
     docker start "$CRATE_CONTAINER" >/dev/null
 else
     # --network host: no NAT; CrateDB binds 4200 (HTTP) and 5432 (pg wire).
+    # max_clause_count: Lucene caps a BooleanQuery at 8192 clauses. The prefix
+    # family in queries.sql uses phrase_prefix WITH (max_expansions = 50000) so
+    # the expansion is exhaustive and the counts match Elasticsearch exactly --
+    # see the rationale in translate.py. At 1b the 'conn' and 'charg' prefixes
+    # expand past 8192 and six queries died with
+    #   TooManyClauses[maxClauseCount is set to 8192]
+    # which the driver records as nulls, i.e. a silent failure. The setting is
+    # static (SET GLOBAL rejects it: "Setting ... is not supported"), so it has
+    # to be a -C node flag. 65536 clears the 50000 expansions with headroom for
+    # Q24, which ANDs a fuzzy match with the prefix; keep it above
+    # MAX_EXPANSIONS in translate.py.
+    #
+    # Note this block only runs when the container is absent or built from a
+    # different image, so changing these flags on an existing container needs a
+    # `docker rm -f` (./install does that, so a --index run picks them up).
     docker run -d \
         --name "$CRATE_CONTAINER" \
         --network host \
@@ -32,7 +47,8 @@ else
         --ulimit nofile=65535:65535 \
         "$CRATE_IMAGE" \
         -Cdiscovery.type=single-node \
-        -Chttp.port="${CRATE_HTTP_PORT}" >/dev/null
+        -Chttp.port="${CRATE_HTTP_PORT}" \
+        -Cindices.query.bool.max_clause_count=65536 >/dev/null
 fi
 
 for _ in $(seq 1 180); do
