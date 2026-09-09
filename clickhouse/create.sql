@@ -32,14 +32,19 @@ CREATE TABLE otel_logs
     -- index for categorical/numeric columns. So those predicates scan the
     -- columnstore unindexed -- the honest inverted-index-only setup. (Note:
     -- SereneDB *does* invert those columns; ClickHouse simply cannot.)
-    -- positions=1 stores positional postings, so matchPhrase is resolved by the
-    -- index alone. Without it the plan falls back to a hasPhrase() re-check on
-    -- the raw column (visible as a Prewhere filter in EXPLAIN indexes=1).
-    INDEX text_idx(Body) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(Body), positions = 1)
+    -- Positional postings are what let matchPhrase be resolved by the index
+    -- alone; without them the plan falls back to a hasPhrase() re-check on the
+    -- raw column (visible as a Prewhere filter in EXPLAIN indexes=1). From 26.9
+    -- the old `positions = 1` parameter is gone: positions are requested per
+    -- index via support_phrase_search, and the feature itself is gated by the
+    -- table setting below. Note that text_index_serialization_version defaults
+    -- to 'v2_with_positions', but that only names the on-disk format -- nothing
+    -- positional is actually written unless support_phrase_search = 1.
+    INDEX text_idx(Body) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(Body), support_phrase_search = 1)
 )
 ENGINE = MergeTree
 -- No primary key: order by nothing, so rows keep insertion (row-id) order and
 -- there is no sorting key. Acceleration comes from the skip indexes above, not
 -- from a primary key on ServiceName/Timestamp.
 ORDER BY tuple()
-SETTINGS allow_experimental_text_index_positions = 1;
+SETTINGS allow_experimental_text_index_phrase_search = 1;
