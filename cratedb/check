@@ -1,7 +1,42 @@
 #!/usr/bin/env bash
-# Exit 0 once CrateDB answers a trivial query.
+# Exit 0 once CrateDB answers queries *against otel_logs*, not merely once the
+# SQL layer is up.
+#
+# `SELECT 1` alone is not enough: it succeeds as soon as the node accepts SQL,
+# while a just-restarted node with a large table still has its shard in
+# recovery. Queries against a recovering relation come back HTTP 404, and
+# because ./query used `curl -f` that surfaced only as `curl: (22)` with the
+# server's JSON error thrown away. With SEARCHBENCH_RESTART=yes the driver
+# restarts before every query, so at 1b (183 GB) this silently turned the first
+# 32 queries of a run into nulls; at 100m (23 GB) recovery always beat the
+# startup wait, so it never showed.
+#
+# sys.health reports per-table health. otel_logs is one shard with no replicas
+# (see create_table.sql), so GREEN is reachable and is the right gate. Before
+# the load the table does not exist yet -- no rows means nothing to wait for.
 set -euo pipefail
 cd "$(dirname "$0")"
 . ./_env.sh
-curl -fsS -X POST "${CRATE_URL}/_sql" -H 'Content-Type: application/json' \
-     -d '{"stmt":"SELECT 1"}' >/dev/null 2>&1
+
+sql() {
+    curl -fsS -X POST "${CRATE_URL}/_sql" -H 'Content-Type: application/json' \
+         -d "{\"stmt\":\"$1\"}" 2>/dev/null
+}
+
+# SQL layer alive at all?
+sql 'SELECT 1' >/dev/null || exit 1
+
+health=$(sql "SELECT health FROM sys.health WHERE table_name = 'otel_logs'") || exit 1
+
+# No row -> table not created yet (pre-load); SELECT 1 is the whole check.
+if [[ "$(printf '%s' "$health" | jq -r '.rows | length')" == 0 ]]; then
+    exit 0
+fi
+
+if [[ "$(printf '%s' "$health" | jq -r '.rows[0][0]')" != GREEN ]]; then
+    exit 1
+fi
+
+# Health can report GREEN a moment before the relation serves reads, so prove
+# it with an actual read rather than trusting the status alone.
+sql 'SELECT 1 FROM otel_logs LIMIT 1' >/dev/null || exit 1

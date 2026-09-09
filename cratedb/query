@@ -12,7 +12,11 @@ cd "$(dirname "$0")"
 stmt=$(cat)
 stmt="${stmt%;}"                      # /_sql rejects a trailing semicolon
 
-resp=$(curl -fsS -w '\n%{time_total}' -X POST "${CRATE_URL}/_sql" \
+# No -f: CrateDB returns its error as a JSON body with a 4xx/5xx status, and
+# -f would discard that body, leaving only "curl: (22) ... error: 404" with no
+# indication of what actually went wrong. The .error check below reports the
+# server's own message instead.
+resp=$(curl -sS -w '\n%{time_total}' -X POST "${CRATE_URL}/_sql" \
     -H 'Content-Type: application/json' \
     --data-binary "$(jq -nc --arg stmt "$stmt" '{stmt:$stmt}')")
 rt=$(printf '%s\n' "$resp" | tail -n1)
