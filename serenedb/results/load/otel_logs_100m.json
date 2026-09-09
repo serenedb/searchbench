@@ -3,9 +3,9 @@
   "dataset": "otel_logs_100m",
   "build": "",
   "engine_version": "26.09.0",
-  "load_time": 56.608,
-  "data_size": 12003233221,
+  "load_time": 45.958,
+  "data_size": 11999320697,
   "os": "Ubuntu 24.04.4 LTS",
-  "date": "2026-09-07",
+  "date": "2026-09-09",
   "loaded_by": "/mnt/data/queries.serenedb-main-workaround.sql"
 }
