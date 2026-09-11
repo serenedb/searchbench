@@ -1,10 +1,10 @@
 {
   "engine": "Manticore",
-  "dataset": "otel_logs_100m",
-  "build": "",
+  "dataset": "otel_logs_1b",
+  "build": "columnar",
   "engine_version": "29.0.2",
-  "load_time": 1438.145,
-  "data_size": 38622449664,
+  "load_time": 12338.396,
+  "data_size": 368979886080,
   "os": "Ubuntu 24.04.4 LTS",
   "date": "2026-09-11",
   "loaded_by": "queries.manticore"
