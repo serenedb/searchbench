@@ -1,4 +1,24 @@
 #!/usr/bin/env bash
+# Exit 0 once Quickwit can actually SERVE a search, not merely once the process
+# is alive.
+#
+# /health/livez is a liveness probe: it answers as soon as the process is up,
+# while a just-restarted node is still opening its metastore and splits. With
+# SEARCHBENCH_RESTART=yes the driver restarts before every query, so at 1b this
+# fired a search into a not-yet-ready node and got HTTP 500 back -- recorded as
+# a null. 47 of the first 47 queries failed that way, while the identical query
+# run by hand a moment later returned 11,356 hits in 956ms. /health/readyz is
+# the readiness probe; the index search is the belt-and-braces check, because
+# readyz can flip before the splits for a 138 GB index are actually queryable.
 set -euo pipefail
-: "${QW_PORT:=7280}"
-curl -fsS --max-time 3 -o /dev/null "http://127.0.0.1:${QW_PORT}/health/livez"
+: "${QW_PORT:=7280}"; : "${QW_INDEX:=otel_logs}"
+Q="http://127.0.0.1:${QW_PORT}"
+
+curl -fsS --max-time 3 -o /dev/null "$Q/health/readyz"
+
+# Before the load the index does not exist yet -- readyz is the whole check.
+if curl -fsS --max-time 3 -o /dev/null "$Q/api/v1/indexes/${QW_INDEX}" 2>/dev/null; then
+    curl -fsS --max-time 15 -o /dev/null -X POST \
+        "$Q/api/v1/_elastic/${QW_INDEX}/_search" -H 'Content-Type: application/json' \
+        -d '{"query":{"match_all":{}},"size":0}'
+fi

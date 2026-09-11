@@ -10,7 +10,10 @@ Q="http://127.0.0.1:${QW_PORT}/api/v1/_elastic/${QW_INDEX}/_search"
 q=$(cat)
 if [[ "$q" == UNSUPPORTED:* ]]; then echo "${q#UNSUPPORTED: }" >&2; exit 3; fi
 
-resp=$(curl -fsS -w '\n%{time_total}' -X POST "$Q" \
+# No -f: Quickwit returns its error as a JSON body with a 4xx/5xx status, and
+# -f discards that body, leaving only "curl: (22) ... error: 500" with no clue
+# what went wrong. The error check below reports the server's own message.
+resp=$(curl -sS -w '\n%{time_total}' -X POST "$Q" \
     -H 'Content-Type: application/json' --data-binary "$q")
 rt=$(printf '%s\n' "$resp" | tail -n1)
 body=$(printf '%s\n' "$resp" | sed '$d')
