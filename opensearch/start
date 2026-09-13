@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 : "${OS_PORT:=9200}"
 : "${OS_DATA_DIR:=${PWD}/os-data}"
-: "${OS_IMAGE:=opensearchproject/opensearch:2.18.0}"
+: "${OS_IMAGE:=opensearchproject/opensearch:3.8.0}"
 : "${OS_CONTAINER:=searchbench-os}"
 # JVM heap; SEARCHBENCH_HEAP keeps ES/OS equal (both), OS_HEAP overrides one
 : "${OS_HEAP:=${SEARCHBENCH_HEAP:-30g}}"
@@ -16,6 +16,14 @@ if ./check >/dev/null 2>&1; then
 fi
 
 mkdir -p "$OS_DATA_DIR/data" "$OS_DATA_DIR/logs"
+
+# Drop a container built from a different image, so an OS_IMAGE bump actually
+# takes effect -- the plain `docker start` below would keep the old version.
+if docker inspect "$OS_CONTAINER" >/dev/null 2>&1 \
+   && [[ "$(docker inspect -f '{{.Config.Image}}' "$OS_CONTAINER")" != "$OS_IMAGE" ]]; then
+    echo "container was built from a different image; recreating for ${OS_IMAGE}"
+    docker rm -f "$OS_CONTAINER" >/dev/null
+fi
 
 # Restart existing container, else create fresh
 if docker inspect "$OS_CONTAINER" >/dev/null 2>&1; then
