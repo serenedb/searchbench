@@ -1,0 +1,11 @@
+{
+  "engine": "Elasticsearch-columnar",
+  "dataset": "otel_logs_1b",
+  "build": "",
+  "engine_version": "9.5.0",
+  "load_time": 12472.044,
+  "data_size": 120218172754,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-09-08",
+  "loaded_by": "queries.dsl"
+}
