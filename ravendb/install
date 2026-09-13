@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Check host prereqs for RavenDB adapter (docker backend).
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${RAVEN_DATA_DIR:=${PWD}/raven-data}"
+: "${RAVEN_IMAGE:=ravendb/ravendb:7.2.5}"
+die() { echo "ERROR: $*" >&2; exit 1; }
+for tool in curl python3; do command -v "$tool" >/dev/null || die "required tool not on PATH: $tool"; done
+for mod in pyarrow orjson requests; do
+    "${SEARCHBENCH_PYTHON:-python3}" -c "import $mod" 2>/dev/null \
+      || die "python module '$mod' missing in '${SEARCHBENCH_PYTHON:-python3}'. Set SEARCHBENCH_PYTHON to a venv with it (pip install $mod)."
+done
+command -v docker >/dev/null || die "docker not on PATH"
+docker info >/dev/null 2>&1 || die "docker daemon not responding"
+echo "RavenDB backend: docker ($RAVEN_IMAGE)"
+docker pull --quiet "$RAVEN_IMAGE" >/dev/null
+echo "RAVEN_DATA_DIR: $RAVEN_DATA_DIR"
+[[ -f "${PWD}/license.json" ]] \
+  && echo "licence file: present" \
+  || echo "licence file: MISSING -- will run under AGPL limits (3 cores / 6GB). See README."
+mkdir -p "$RAVEN_DATA_DIR"; chmod -R a+rwX "$RAVEN_DATA_DIR" 2>/dev/null || true
+echo "Adapter ready. Run ./start to launch."
