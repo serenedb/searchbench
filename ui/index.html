@@ -98,6 +98,11 @@
   /* ---- table ---- */
   .tscroll { flex:1; min-height:0; overflow:auto; position:relative; }
   .thead { position:sticky; top:0; z-index:5; display:grid; width:max-content; min-width:100%; background:var(--head); }
+  .thead .corner .sortnote { display:block; margin-top:2px; font-size:9.5px; font-weight:600;
+      letter-spacing:.02em; text-transform:none; color:var(--accent); overflow:hidden; text-overflow:ellipsis; }
+  /* now a <button>: strip the UA border/appearance so it still reads as a header cell */
+  .thead .corner { cursor:pointer; text-align:left; font-family:inherit; border:0;
+      border-bottom:.5px solid var(--line); border-right:.5px solid var(--line); appearance:none; }
   .thead .corner { position:sticky; left:0; z-index:6; background:var(--head); border-bottom:.5px solid var(--line); border-right:.5px solid var(--line); padding:5px 7px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--mut); }
   .engcol { border-bottom:.5px solid var(--line); border-right:.5px solid var(--line); padding:5px 7px; text-align:left; font-size:11px; font-weight:700; cursor:pointer; color:var(--fg); line-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .engcol .grip { color:var(--mut); font-size:9px; margin-right:5px; }
@@ -109,6 +114,10 @@
   .rowlab { position:sticky; left:0; z-index:2; background:var(--card); border:0; border-bottom:.5px solid var(--line); border-right:.5px solid var(--line); padding:var(--pad-y) 8px; text-align:left; font-size:11.5px; font-weight:600; line-height:16px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .rowlab:hover { color:var(--accent); }
   .rowlab .mk { display:inline-block; width:11px; text-align:center; color:var(--accent); }
+  /* Every row label sorts the engine columns, but only the ACTIVE row showed a
+     glyph, so the affordance was invisible. Reveal a dim one on hover. */
+  .rowlab .mk:empty::after { content:"\2195"; opacity:0; color:var(--mut); transition:opacity .12s; }
+  .rowlab:hover .mk:empty::after { opacity:.55; }
   .rowlab .tg { opacity:.55; font-size:10.5px; font-weight:500; margin-left:7px; }
   .cell { border-bottom:.5px solid rgba(0,0,0,.1); border-right:.5px solid rgba(0,0,0,.14); padding:var(--pad-y) 7px; text-align:right; font-size:11px; font-weight:600; line-height:16px; font-variant-numeric:tabular-nums; white-space:nowrap; }
   .cell.q { cursor:pointer; }
@@ -593,7 +602,10 @@ function renderTable(ds, engines) {
   const mark = k => state.sortRow === k ? (state.sortDir === 1 ? "▲" : "▼") : "";
 
   // header
-  let head = `<div class="thead" style="grid-template-columns:${gridCols}"><div class="corner">metric \\ engine</div>`;
+  const sortName = k => k === "geomean" ? "Geomean" : k === "load" ? "Load time"
+      : k === "size" ? "On-disk size" : (k && k.startsWith("q:")) ? k.slice(2) : "manual";
+  const sortNote = state.sortRow ? `${sortName(state.sortRow)} ${state.sortDir === 1 ? "▲" : "▼"}` : "manual order";
+  let head = `<div class="thead" style="grid-template-columns:${gridCols}"><button class="corner" data-act="sortrow" data-key="geomean" title="engine columns are sorted by this row — click any row label to sort by that row; click here for Geomean">metric \\ engine<span class="sortnote">↕ ${esc(sortNote)}</span></button>`;
   engines.forEach(e => {
     const ver = [e.version && e.version !== "unknown" ? "v" + e.version : null, e.os, e.date].filter(Boolean).join(" · ");
     const tags = tagsOf(e).join(" · ");
