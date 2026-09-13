@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Launch VictoriaLogs container; idempotent via ./check
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${VL_PORT:=9428}"
+: "${VL_DATA_DIR:=${PWD}/vl-data}"
+: "${VL_IMAGE:=victoriametrics/victoria-logs:v1.52.0}"
+: "${VL_CONTAINER:=searchbench-vl}"
+# The corpus is timestamped 2025-09-23. VictoriaLogs DROPS entries older than
+# -retentionPeriod (default 7d) at ingest time -- silently, apart from a warn
+# line, with the count in vl_rows_dropped_total{reason="too_small_timestamp"}.
+# Loading the corpus with the default retention ingests 0 rows. 10y covers any
+# corpus vintage; retention is an operational knob, not a query/index tunable,
+# so widening it does not flatter the engine.
+: "${VL_RETENTION:=10y}"
+
+if ./check >/dev/null 2>&1; then
+    echo "VictoriaLogs already up on :${VL_PORT}"
+    exit 0
+fi
+
+mkdir -p "$VL_DATA_DIR"
+chmod a+rwX "$VL_DATA_DIR" 2>/dev/null || true
+
+# Drop a container built from a different image, so a VL_IMAGE bump actually
+# takes effect -- the plain `docker start` below would keep the old version.
+if docker inspect "$VL_CONTAINER" >/dev/null 2>&1 \
+   && [[ "$(docker inspect -f '{{.Config.Image}}' "$VL_CONTAINER")" != "$VL_IMAGE" ]]; then
+    echo "container was built from a different image; recreating for ${VL_IMAGE}"
+    docker rm -f "$VL_CONTAINER" >/dev/null
+fi
+
+if docker inspect "$VL_CONTAINER" >/dev/null 2>&1; then
+    docker start "$VL_CONTAINER" >/dev/null
+else
+    # --network host to match the ES/OS adapters: no NAT in the timing path.
+    docker run -d \
+        --name "$VL_CONTAINER" \
+        --network host \
+        -v "${VL_DATA_DIR}:/vl-data" \
+        "$VL_IMAGE" \
+        -storageDataPath=/vl-data \
+        -httpListenAddr=":${VL_PORT}" \
+        -retentionPeriod="${VL_RETENTION}" >/dev/null
+fi
+
+for _ in $(seq 1 180); do
+    if ./check >/dev/null 2>&1; then
+        echo "VictoriaLogs up on :${VL_PORT} (backend=docker)"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "VictoriaLogs did not become healthy within 180s." >&2
+docker logs --tail 50 "$VL_CONTAINER" 2>&1 >&2 || true
+exit 1

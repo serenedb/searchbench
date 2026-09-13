@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Bulk-ingest the parquet corpus into VictoriaLogs.
+#
+# There is no schema/index step: VictoriaLogs is schemaless and builds its
+# inverted index at ingest. The field roles (_time/_msg/_stream) are URL
+# parameters on the insert endpoint -- see ingest.py.
+#
+# Wiping is a directory delete, not a DROP: the storage has no notion of a
+# named index to recreate, so a reload has to stop the server, clear
+# -storageDataPath and start it again.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${VL_PORT:=9428}"
+: "${VL_DATA_DIR:=${PWD}/vl-data}"
+: "${VL_CONTAINER:=searchbench-vl}"
+VL_URL="http://127.0.0.1:${VL_PORT}"
+
+if [[ "${SEARCHBENCH_SKIP_LOAD:-no}" == "yes" ]]; then
+    echo "[load] SEARCHBENCH_SKIP_LOAD=yes, leaving storage as-is"
+    exit 0
+fi
+
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] \
+  || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+shopt -s nullglob
+files=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet )
+shopt -u nullglob
+[[ ${#files[@]} -gt 0 ]] \
+  || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+# Start from empty storage so load time and data size describe this corpus only.
+echo "[load] clearing storage at $VL_DATA_DIR"
+./stop
+docker run --rm -v "${VL_DATA_DIR}:/d" alpine sh -c 'rm -rf /d/* /d/.[!.]* 2>/dev/null' || true
+./start >/dev/null
+
+before_dropped=$(curl -fsS "$VL_URL/metrics" \
+  | awk '/^vl_rows_dropped_total\{reason="too_small_timestamp"\}/ { print $2 }')
+
+VL_URL="$VL_URL" "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py \
+    --local-dir "$SEARCHBENCH_DATA_DIR" \
+    --files "${#files[@]}"
+
+# Make ingested data visible and durable so cold-cache numbers are well-defined.
+# /internal/force_flush is VictoriaLogs' equivalent of an ES refresh+flush.
+curl -fsS -X POST "$VL_URL/internal/force_flush" >/dev/null 2>&1 || true
+sleep 2
+
+# Retention silently DROPS entries older than -retentionPeriod, which for this
+# 2025-dated corpus means a mis-set retention ingests zero rows while every HTTP
+# call still returns 200. Fail loudly instead of benchmarking an empty database.
+dropped=$(curl -fsS "$VL_URL/metrics" \
+  | awk '/^vl_rows_dropped_total\{reason="too_small_timestamp"\}/ { print $2 }')
+if [[ -n "$dropped" && "${dropped%.*}" -gt "${before_dropped%.*:-0}" ]]; then
+    echo "[load] ERROR: VictoriaLogs dropped ${dropped} rows as older than the retention period." >&2
+    echo "[load]        Raise VL_RETENTION (currently applied at ./start) to cover the corpus." >&2
+    exit 1
+fi
+
+count=$(curl -fsS "$VL_URL/select/logsql/query" \
+    --data-urlencode 'query=* | stats count() as c' 2>/dev/null \
+    | sed -n 's/.*"c":"\([0-9]*\)".*/\1/p')
+echo "[load] otel_logs rows=${count:-unknown}"
