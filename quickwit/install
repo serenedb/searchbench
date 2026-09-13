@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${QW_DATA_DIR:=${PWD}/qw-data}"
+: "${QW_IMAGE:=quickwit/quickwit:0.9.0}"
+die() { echo "ERROR: $*" >&2; exit 1; }
+for t in curl python3; do command -v "$t" >/dev/null || die "required tool not on PATH: $t"; done
+for m in pyarrow orjson requests; do
+  "${SEARCHBENCH_PYTHON:-python3}" -c "import $m" 2>/dev/null || die "python module '$m' missing"
+done
+command -v docker >/dev/null || die "docker not on PATH"
+docker info >/dev/null 2>&1 || die "docker daemon not responding"
+echo "Quickwit backend: docker ($QW_IMAGE)"
+docker pull --quiet "$QW_IMAGE" >/dev/null
+mkdir -p "$QW_DATA_DIR"; chmod -R a+rwX "$QW_DATA_DIR" 2>/dev/null || true
+echo "QW_DATA_DIR: $QW_DATA_DIR"
+echo "Adapter ready. Run ./start to launch."
