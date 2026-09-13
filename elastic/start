@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 : "${ES_PORT:=9201}"   # 9201 not 9200: avoid OpenSearch collision
 : "${ES_DATA_DIR:=${PWD}/es-data}"
-: "${ES_IMAGE:=docker.elastic.co/elasticsearch/elasticsearch:9.3.2}"
+: "${ES_IMAGE:=docker.elastic.co/elasticsearch/elasticsearch:9.5.0}"
 : "${ES_CONTAINER:=searchbench-es}"
 # JVM heap; shared SEARCHBENCH_HEAP keeps ES/OS equal (ES_HEAP overrides just ES)
 : "${ES_HEAP:=${SEARCHBENCH_HEAP:-30g}}"
@@ -16,6 +16,14 @@ if ./check >/dev/null 2>&1; then
 fi
 
 mkdir -p "$ES_DATA_DIR/data" "$ES_DATA_DIR/logs"
+
+# Drop a container built from a different image, so an ES_IMAGE bump actually
+# takes effect -- the plain `docker start` below would keep the old version.
+if docker inspect "$ES_CONTAINER" >/dev/null 2>&1 \
+   && [[ "$(docker inspect -f '{{.Config.Image}}' "$ES_CONTAINER")" != "$ES_IMAGE" ]]; then
+    echo "container was built from a different image; recreating for ${ES_IMAGE}"
+    docker rm -f "$ES_CONTAINER" >/dev/null
+fi
 
 # Restart existing container, else create fresh
 if docker inspect "$ES_CONTAINER" >/dev/null 2>&1; then

@@ -107,7 +107,7 @@
 -- Q52 task=top_k filter=and,negation freq=hi (error but NOT cache)
 {"query":{"bool":{"must":[{"match":{"Body":"error"}}],"must_not":[{"match":{"Body":"cache"}}]}},"size":100,"sort":[{"_score":"desc"}],"_source":["Timestamp","ServiceName","Body"]}
 -- Q53 task=top_k filter=and,window freq=hi (term + service + Timestamp BETWEEN 6h)
-{"query":{"match":{"Body":"charge"}},"size":100,"sort":[{"_score":"desc"}],"_source":["Timestamp","ServiceName","Body"]}
+{"query":{"bool":{"must":[{"match":{"Body":"charge"}}],"filter":[{"term":{"ServiceName":"payment"}},{"range":{"Timestamp":{"gte":"2025-09-23T00:00:00","lte":"2025-09-23T06:00:00"}}}]}},"size":100,"sort":[{"_score":"desc"}],"_source":["Timestamp","ServiceName","Body"]}
 -- Q54 task=group_by filter=or freq=hi (key=SeverityText, ordered)
 {"query":{"match":{"Body":{"query":"error failed","operator":"or"}}},"size":0,"aggs":{"by_sev":{"terms":{"field":"SeverityText","size":100,"order":{"_count":"desc"}}}}}
 -- Q55 task=group_by filter=term freq=hi (key=SeverityText, ordered)
@@ -169,20 +169,20 @@
 -- Q83 task=recent filter=or,window freq=mid (connection/request/conversion, NO order by)
 {"query":{"bool":{"must":[{"match":{"Body":{"query":"connection request conversion","operator":"or"}}}],"filter":[{"range":{"Timestamp":{"gte":"2025-09-23T00:00:00","lte":"2025-09-23T00:30:00"}}}]}},"size":100,"_source":["Timestamp","ServiceName","SeverityText","Body"]}
 -- Q84 task=join filter=term freq=hi (frontend 'failed' traces that also involve payment)
-FROM otel_logs | WHERE ServiceName == "frontend" AND MATCH(Body, "failed") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS traces = COUNT_DISTINCT(TraceId)
+FROM otel_logs | WHERE ServiceName == "frontend" AND MATCH(Body, "failed") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS BY TraceId | STATS traces = COUNT(*)
 -- Q85 task=join filter=or freq=hi
-FROM otel_logs | WHERE MATCH(Body, "error failed", {"operator": "or"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS traces = COUNT_DISTINCT(TraceId)
+FROM otel_logs | WHERE MATCH(Body, "error failed", {"operator": "or"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS BY TraceId | STATS traces = COUNT(*)
 -- Q86 task=join filter=phrase freq=mid
-FROM otel_logs | WHERE MATCH_PHRASE(Body, "failed to place order") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS traces = COUNT_DISTINCT(TraceId)
+FROM otel_logs | WHERE MATCH_PHRASE(Body, "failed to place order") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS BY TraceId | STATS traces = COUNT(*)
 -- Q87 task=join filter=regexp freq=hi
-FROM otel_logs | WHERE QSTR("Body:/charg.*/") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS traces = COUNT_DISTINCT(TraceId)
+FROM otel_logs | WHERE QSTR("Body:/charg.*/") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS BY TraceId | STATS traces = COUNT(*)
 -- Q88 task=join filter=and freq=hi (failed&order traces that also involve cart)
-FROM otel_logs | WHERE MATCH(Body, "failed order", {"operator": "and"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_cart == true | STATS traces = COUNT_DISTINCT(TraceId)
+FROM otel_logs | WHERE MATCH(Body, "failed order", {"operator": "and"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_cart == true | STATS BY TraceId | STATS traces = COUNT(*)
 -- Q89 task=join filter=or freq=mid
-FROM otel_logs | WHERE MATCH(Body, "connection request", {"operator": "or"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS traces = COUNT_DISTINCT(TraceId)
+FROM otel_logs | WHERE MATCH(Body, "connection request", {"operator": "or"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS BY TraceId | STATS traces = COUNT(*)
 -- Q90 task=join filter=and freq=hi
-FROM otel_logs | WHERE MATCH(Body, "charge request", {"operator": "and"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS traces = COUNT_DISTINCT(TraceId)
+FROM otel_logs | WHERE MATCH(Body, "charge request", {"operator": "and"}) | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS BY TraceId | STATS traces = COUNT(*)
 -- Q91 task=join filter=term freq=hi
-FROM otel_logs | WHERE MATCH(Body, "order") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS traces = COUNT_DISTINCT(TraceId)
+FROM otel_logs | WHERE MATCH(Body, "order") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS BY TraceId | STATS traces = COUNT(*)
 -- Q92 task=join filter=prefix freq=hi
-FROM otel_logs | WHERE QSTR("Body:charg*") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS traces = COUNT_DISTINCT(TraceId)
+FROM otel_logs | WHERE QSTR("Body:charg*") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_frontend == true | STATS BY TraceId | STATS traces = COUNT(*)

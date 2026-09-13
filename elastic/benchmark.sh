@@ -7,6 +7,13 @@ set -e
 cd "$(dirname "$0")"
 
 export ENGINE_NAME="Elasticsearch"
-export ENGINE_TAGS='["Java","Lucene","Elasticsearch","REST","DSL"]'
+# Overridable so an A-B variant can retag itself, e.g. the pure ES|QL run:
+#   ENGINE_TAGS='["Java","Lucene","Elasticsearch","REST","ES|QL"]' \
+#   SEARCHBENCH_QUERIES=queries.esql ./benchmark.sh --version=esql
+: "${ENGINE_TAGS:=[\"Java\",\"Lucene\",\"Elasticsearch\",\"REST\",\"DSL\"]}"
+export ENGINE_TAGS
+# Two query sets ship here, so lib/benchmark.sh auto-labels the column with the
+# dialect actually run (queries.dsl -> "Elasticsearch (dsl)", queries.esql ->
+# "Elasticsearch (esql)"). Nothing engine-specific is needed for that.
 export SEARCHBENCH_QUERIES="${SEARCHBENCH_QUERIES:-queries.dsl}"
 exec ../lib/benchmark.sh "$@"
