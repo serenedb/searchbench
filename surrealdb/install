@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${SURREAL_DATA_DIR:=${PWD}/surreal-data}"
+: "${SURREAL_IMAGE:=surrealdb/surrealdb:v3.2.4}"
+die() { echo "ERROR: $*" >&2; exit 1; }
+for t in curl python3; do command -v "$t" >/dev/null || die "required tool not on PATH: $t"; done
+for m in pyarrow orjson requests; do
+  "${SEARCHBENCH_PYTHON:-python3}" -c "import $m" 2>/dev/null \
+    || die "python module '$m' missing in '${SEARCHBENCH_PYTHON:-python3}'"
+done
+command -v docker >/dev/null || die "docker not on PATH"
+docker info >/dev/null 2>&1 || die "docker daemon not responding"
+echo "SurrealDB backend: docker ($SURREAL_IMAGE)"
+docker pull --quiet "$SURREAL_IMAGE" >/dev/null
+mkdir -p "$SURREAL_DATA_DIR"; chmod -R a+rwX "$SURREAL_DATA_DIR" 2>/dev/null || true
+echo "SURREAL_DATA_DIR: $SURREAL_DATA_DIR"
+echo "Adapter ready. Run ./start to launch."

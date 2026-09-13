@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Run one SurrealDB query; timing on stderr.
+#
+# stdin = one SurrealQL statement. stdout = result rows. stderr last line = curl
+# %{time_total} secs: client round-trip, comparable across engines.
+#
+# `UNSUPPORTED: <reason>` lines from translate.py exit non-zero so the driver
+# records a null latency and logs the reason.
+set -euo pipefail
+: "${SURREAL_PORT:=8000}"
+: "${SURREAL_NS:=bench}"; : "${SURREAL_DB:=logs}"
+: "${SURREAL_USER:=root}"; : "${SURREAL_PASS:=root}"
+S="http://127.0.0.1:${SURREAL_PORT}"
+
+q=$(cat)
+if [[ "$q" == UNSUPPORTED:* ]]; then echo "${q#UNSUPPORTED: }" >&2; exit 3; fi
+
+resp=$(curl -fsS -w '\n%{time_total}' -X POST "$S/sql" -u "${SURREAL_USER}:${SURREAL_PASS}" \
+    -H 'Accept: application/json' -H 'Content-Type: text/plain' \
+    -H "surreal-ns: ${SURREAL_NS}" -H "surreal-db: ${SURREAL_DB}" --data-binary "$q")
+rt=$(printf '%s\n' "$resp" | tail -n1)
+payload=$(printf '%s\n' "$resp" | sed '$d')
+
+printf '%s' "$payload" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if isinstance(d, dict):
+    print(d.get("information", d), file=sys.stderr); sys.exit(1)
+last = d[-1] if d else {}
+if last.get("status") != "OK":
+    print(last.get("result"), file=sys.stderr); sys.exit(1)
+res = last.get("result")
+if isinstance(res, list):
+    for r in res: print(json.dumps(r))
+else:
+    print(json.dumps(res))
+'
+printf '%s\n' "$rt" >&2
