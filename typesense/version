@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${TS_PORT:=8108}"; : "${TS_KEY:=searchbench}"
+curl -fsS -H "X-TYPESENSE-API-KEY: ${TS_KEY}" "http://127.0.0.1:${TS_PORT}/debug" 2>/dev/null \
+  | python3 -c "import sys,json;print(json.load(sys.stdin).get('version','unknown'))" 2>/dev/null || echo unknown

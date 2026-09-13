@@ -1,0 +1,80 @@
+{
+ "name": "otel_logs",
+ "token_separators": [
+  "_",
+  "-",
+  "/",
+  ".",
+  ":",
+  ",",
+  "\"",
+  "'",
+  "{",
+  "}",
+  "[",
+  "]",
+  "(",
+  ")",
+  "=",
+  ">",
+  "<",
+  "|",
+  "?",
+  "!",
+  "#",
+  "@",
+  "&",
+  "%",
+  "$",
+  "*",
+  "+",
+  "~",
+  "`",
+  "^",
+  ";",
+  "\\"
+ ],
+ "fields": [
+  {
+   "name": "Body",
+   "type": "string",
+   "infix": true
+  },
+  {
+   "name": "ServiceName",
+   "type": "string",
+   "facet": true
+  },
+  {
+   "name": "SeverityText",
+   "type": "string",
+   "facet": true
+  },
+  {
+   "name": "ScopeName",
+   "type": "string",
+   "facet": true,
+   "optional": true
+  },
+  {
+   "name": "SeverityNumber",
+   "type": "int32"
+  },
+  {
+   "name": "TimestampMs",
+   "type": "int64",
+   "sort": true
+  },
+  {
+   "name": "Timestamp",
+   "type": "string",
+   "index": false,
+   "optional": true
+  },
+  {
+   "name": ".*",
+   "type": "auto",
+   "optional": true
+  }
+ ]
+}
