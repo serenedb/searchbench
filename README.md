@@ -13,6 +13,44 @@ The runner shape follows
 implements `./install`, `./start`, `./stop`, `./check`, `./load`,
 `./query`, `./data-size`; the shared `lib/benchmark.sh` orchestrates.
 
+## Results page
+
+The React UI in `frontend/` is shared with SereneDB Playground. Engine adapters
+and `lib/` remain at the repository root. Results are assembled into the committed
+`frontend/results.json`; there is no separate `data/` directory.
+
+**View without installing anything:** open `frontend/index.html` in a browser.
+The committed HTML contains its JavaScript, styles, fonts and a snapshot of the
+JSON, so it works offline by double-clicking the file.
+
+**Develop or rebuild** (Node.js 22+, npm):
+
+```bash
+git clone --recurse-submodules https://github.com/serenedb/searchbench.git
+cd searchbench/frontend
+# In an existing checkout: git submodule update --init --recursive
+npm ci
+npm run dev                 # standalone SearchBench from frontend/results.json
+npm run build               # regenerate the self-contained frontend/index.html
+npm run typecheck
+npm test
+```
+
+The dev server uses the React sources, including live changes to `results.json`.
+The generated HTML is a snapshot: editing JSON alone does not change an already
+built page. After new benchmark runs, use the executable script (Bash and jq):
+
+```bash
+./build_results             # engine results -> frontend/results.json
+npm run build              # JSON + React UI -> frontend/index.html
+```
+
+Commit both `frontend/results.json` and `frontend/index.html` when publishing
+updated results. `build_results` is a shell script, not an npm command. The
+previous `ui/build` and `ui/data.js` are replaced by these files.
+
+See [frontend/README.md](frontend/README.md) for embedding and build details.
+
 ## Run
 
 ```bash

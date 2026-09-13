@@ -62,3 +62,7 @@ clickhouse/*.log
 clickhouse/.clickhouse.pid
 manticore/manticore_data/
 manticore/manticore-data/
+
+node_modules/
+frontend/.build/
+frontend/results.json.??????
