@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_backend.sh
+docker stop --time 30 "$MANTICORE_CONTAINER" >/dev/null 2>&1 || true

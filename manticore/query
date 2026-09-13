@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Run one Manticore SQL query and emit timing on stderr.
+#
+# Contract (SearchBench adapter):
+#   stdin:  one SQL statement (one line).
+#     - "UNSUPPORTED: ..." -> record null (engine can't express this query; used
+#        for the joins Q84-Q92, since Manticore has no same-table self-join, and
+#        Q24 fuzzy+prefix).
+#   stdout: result rows (one JSON object per line).
+#   stderr: last numeric line = server-side query time in seconds (response.took/1000).
+#
+# Transport: HTTP /sql (SQL over HTTP, ES-style JSON response). One statement per
+# request -> works with `OPTION fuzzy=1` (the buddy sidecar rejects the multi-
+# statement "<query>; SHOW META" that a raw-mode timing probe would need).
+set -uo pipefail
+: "${MANTICORE_HTTP_PORT:=9308}"
+URL="http://127.0.0.1:${MANTICORE_HTTP_PORT}/sql"
+
+q=$(cat)
+[[ "$q" =~ ^[[:space:]]*UNSUPPORTED: ]] && exit 0   # no timing -> driver records null
+q=${q%;}
+
+resp=$(curl -fsS "$URL" --data-urlencode "query=$q" 2>/dev/null) || {
+    echo "[manticore] request failed" >&2; exit 1; }
+err=$(jq -r 'if type=="object" then (.error // "") else "" end' <<<"$resp" 2>/dev/null)
+if [[ -n "$err" ]]; then echo "[manticore] error: $err" >&2; exit 1; fi
+took=$(jq -r '.took // empty' <<<"$resp" 2>/dev/null)
+if [[ -z "$took" ]]; then echo "[manticore] no took in response: ${resp:0:250}" >&2; exit 1; fi
+
+jq -c '.hits.hits[]?._source' <<<"$resp"                      # result rows, one JSON/line
+awk -v ms="$took" 'BEGIN { printf "%.3f\n", ms / 1000 }' >&2   # timing (s) -- last numeric stderr line
