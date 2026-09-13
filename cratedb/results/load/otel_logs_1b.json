@@ -1,0 +1,11 @@
+{
+  "engine": "CrateDB",
+  "dataset": "otel_logs_1b",
+  "build": "",
+  "engine_version": "6.4.1",
+  "load_time": 19977.490,
+  "data_size": 204536252088,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-09-13",
+  "loaded_by": "queries.sql"
+}
