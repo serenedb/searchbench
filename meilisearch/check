@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Exit 0 when Meilisearch reports available; non-zero otherwise.
+set -euo pipefail
+: "${MEILI_PORT:=7700}"
+: "${MEILI_KEY:=searchbench-meili-master-key-01}"
+[[ "$(curl -fsS --max-time 3 -H "Authorization: Bearer ${MEILI_KEY}" \
+      "http://127.0.0.1:${MEILI_PORT}/health" 2>/dev/null)" == *available* ]]
