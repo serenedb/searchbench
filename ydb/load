@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Load the corpus into YDB and build the fulltext index.
+#
+# Three stages, all of which must happen in this order:
+#   1. prep.py rewrites the corpus parquet into YDB's schema (BodyNorm computed,
+#      map<> columns JSON-encoded, us timestamps, Uint64 key), in parallel.
+#   2. `ydb import file parquet` loads the directory with --threads. This is
+#      ~5x the Python BulkUpsert path (31k vs 6.6k rows/s) and is the reason
+#      prep writes many files rather than one.
+#   3. ALTER TABLE ADD INDEX builds the fulltext index. It cannot exist during
+#      the load: both bulk paths reject a table with a synchronous index.
+#
+# The index build is asynchronous -- ALTER returns in seconds while the build
+# runs for minutes -- so completion is taken from `operation list buildindex`,
+# not from ALTER returning.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${YDB_CONTAINER:=searchbench-ydb}"
+: "${YDB_GRPC_PORT:=2136}"
+: "${YDB_STAGE_DIR:=/mnt/data/mkornaukhov/data/ydb-stage}"
+: "${YDB_PREP_PROCS:=30}"
+: "${YDB_IMPORT_THREADS:=31}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set}"
+
+Y() { docker exec "$YDB_CONTAINER" /ydb -e "grpc://localhost:${YDB_GRPC_PORT}" -d /local "$@"; }
+SQL() { Y sql -s "$1"; }
+
+src=$(ls "${SEARCHBENCH_DATA_DIR}"/*.parquet 2>/dev/null | head -1)
+[[ -n "$src" ]] || { echo "no parquet under ${SEARCHBENCH_DATA_DIR}" >&2; exit 1; }
+
+expected=$(python3 -c "import pyarrow.parquet as pq,sys;print(pq.ParquetFile(sys.argv[1]).metadata.num_rows)" "$src")
+echo "source: $src ($expected rows)"
+
+# --- stage ---------------------------------------------------------------
+staged=$(ls "$YDB_STAGE_DIR"/*.parquet 2>/dev/null | wc -l)
+staged_rows=0
+if [[ "$staged" -gt 0 ]]; then
+    staged_rows=$(python3 -c "
+import glob,sys,pyarrow.parquet as pq
+print(sum(pq.ParquetFile(f).metadata.num_rows for f in glob.glob(sys.argv[1]+'/*.parquet')))" "$YDB_STAGE_DIR")
+fi
+if [[ "$staged_rows" != "$expected" ]]; then
+    echo "staging ${expected} rows -> ${YDB_STAGE_DIR} (${YDB_PREP_PROCS} processes)"
+    mkdir -p "$YDB_STAGE_DIR"
+    python3 prep.py "$src" "$YDB_STAGE_DIR" "$expected" "$YDB_PREP_PROCS"
+else
+    echo "staged parquet already present (${staged_rows} rows), reusing"
+fi
+
+# --- schema --------------------------------------------------------------
+SQL 'DROP TABLE otel_logs;' >/dev/null 2>&1 || true
+SQL "$(cat create.sql)" >/dev/null
+echo "table created"
+
+# --- import --------------------------------------------------------------
+echo "importing (--threads ${YDB_IMPORT_THREADS})"
+Y import file parquet -p otel_logs \
+    --threads "$YDB_IMPORT_THREADS" --max-in-flight 100 --batch-bytes 8MiB \
+    /stage 2>&1 | tail -2 || true
+
+got=$(SQL 'SELECT count(*) AS n FROM otel_logs;' 2>/dev/null \
+      | grep -oE '[0-9]+' | tail -1)
+echo "imported: ${got} / ${expected}"
+if [[ "$got" != "$expected" ]]; then
+    echo "ROW COUNT MISMATCH: imported ${got}, expected ${expected}" >&2
+    exit 1
+fi
+
+# --- index ---------------------------------------------------------------
+# fulltext_relevance, not fulltext_plain: FulltextScore (BM25) needs it, and the
+# 19 top_k queries sort by score. FulltextMatch works on it too, so one index
+# serves both matching and ranking.
+echo "building fulltext index"
+SQL 'ALTER TABLE otel_logs ADD INDEX idx_rel GLOBAL USING fulltext_relevance ON (BodyNorm)
+     WITH (tokenizer="whitespace", use_filter_lowercase=true);' >/dev/null
+
+for _ in $(seq 1 720); do
+    out=$(Y operation list buildindex 2>/dev/null | tr -d ' ' || true)
+    if echo "$out" | grep -q 'idx_rel'; then
+        if echo "$out" | grep -q 'SUCCESS.*Done.*100.00%.*idx_rel' \
+           || echo "$out" | grep -q 'true│SUCCESS│Done'; then
+            echo "index build complete"
+            break
+        fi
+        if echo "$out" | grep -qE 'ABORTED|FAILED|CANCELLED'; then
+            echo "index build failed" >&2
+            Y operation list buildindex >&2
+            exit 1
+        fi
+    fi
+    sleep 10
+done
+
+echo "rows: ${got}"

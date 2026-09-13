@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Liveness: YDB answers a trivial query.
+set -euo pipefail
+: "${YDB_CONTAINER:=searchbench-ydb}"
+: "${YDB_GRPC_PORT:=2136}"
+docker exec "$YDB_CONTAINER" /ydb -e "grpc://localhost:${YDB_GRPC_PORT}" -d /local \
+    sql -s 'SELECT 1;' >/dev/null 2>&1
