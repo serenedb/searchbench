@@ -1,0 +1,11 @@
+{
+  "engine": "ClickHouse",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "26.8.2.7",
+  "load_time": 45.992,
+  "data_size": 20185818061,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-09-13",
+  "loaded_by": "queries.sql"
+}
