@@ -17,13 +17,22 @@
    Change any of those and every link in every issue thread decodes to a
    different view. The standalone browser check also exercises this URL round-trip.
 
+   The one slot whose *default* moved: `s`. The bytes are unchanged — the
+   default link is still `?s=eyJ2IjoxfQ`, because the omitted-when-default rule
+   still omits it — but the view behind an omitted `s` is now the default column
+   order rather than a plain geomean sort (see DEFAULT_SORT_ROW). That is the
+   point of the change and not an accident of it: a link that pinned no sort
+   asked for whatever the page considers its own best order, and this is it. A
+   link that did pin one still carries it, `"s":"geomean"` included, and the
+   standalone reads that slot as it always did.
+
    The one field that moved: `th`. `state.theme` is gone — the platform owns the
    theme — so the codec takes the current `useTheme()` value as an argument and
    hands a restored one back to the caller to apply via `setTheme`. The slot,
    its name and its default ("dark") are unchanged, so the bytes are unchanged. */
 
 import type { BenchState, Metric, PanelId, Scale, SortDir, Tab, ValueMode } from './state';
-import { HIDEABLE_PANELS } from './state';
+import { DEFAULT_SORT_ROW, HIDEABLE_PANELS } from './state';
 
 /** Mirrors @serenedb/ui's `Theme`, without importing it into a pure module. */
 export type ThemeName = 'dark' | 'light';
@@ -93,7 +102,7 @@ export function shortState(state: BenchState, env: CodecEnv, theme: ThemeName): 
   put('l', state.scale, 'log');
   put('q', csv(state.activeQTasks), '');
   put('h', csv(state.hidden), '');
-  put('s', state.sortRow, 'geomean');
+  put('s', state.sortRow, DEFAULT_SORT_ROW);
   put('sd', state.sortDir, 1);
   put('e', state.sortByEngine, null);
   put('ed', state.sortByEngineDir, 1);

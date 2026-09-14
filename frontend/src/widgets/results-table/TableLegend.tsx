@@ -16,17 +16,27 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { ratioBg } from '../../shared/lib/format';
 import { TIMEOUT_CAP } from '../../shared/lib/metrics';
-import type { Metric, ValueMode } from '../../shared/model';
+import { DEFAULT_SORT_ROW, type Metric, type ValueMode } from '../../shared/model';
 
 export interface TableLegendProps {
   metric: Metric;
   valueMode: ValueMode;
+  /** `state.sortRow` — the default order is the one that needs explaining. */
+  sortRow: string;
 }
 
 /** ui/index.html:658 — repeated verbatim on each of the five swatch items. */
 const item: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4 };
 
-export function TableLegend({ metric, valueMode }: TableLegendProps): ReactNode {
+export function TableLegend({ metric, valueMode, sortRow }: TableLegendProps): ReactNode {
+  /* Named only under the default order: every other order names itself, with
+     the ▲ on the row label or the engine header it was clicked from, and this
+     one has no row to put a mark on. Trailing separator, so it drops out of
+     the sentence cleanly when a row sort is active. */
+  const order =
+    sortRow === DEFAULT_SORT_ROW
+      ? 'engines by queries supported, then finished, then geomean · '
+      : '';
   const unit =
     valueMode === 'relative'
       ? 'ratio to fastest'
@@ -56,8 +66,8 @@ export function TableLegend({ metric, valueMode }: TableLegendProps): ReactNode 
         <span className="sw" style={{ background: '#000' }} />💀 timed out ({TIMEOUT_CAP}s cap)
       </span>
       <span>
-        {metric} run · {unit} · click a cell for its query · click a row label or engine header to
-        sort · drag a column to reorder
+        {metric} run · {unit} · {order}click a cell for its query · click a row label or engine
+        header to sort · drag a column to reorder
       </span>
     </div>
   );

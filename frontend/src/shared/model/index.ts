@@ -1,6 +1,7 @@
 /* The state shape, its reducer and the URL codec. */
 
 export {
+  DEFAULT_SORT_ROW,
   HIDEABLE_PANELS,
   INITIAL_STATE,
   curDataset,
