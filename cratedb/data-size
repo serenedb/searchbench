@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# On-disk bytes of everything this engine stores for the workload.
+# sys.shards.size is the per-shard on-disk footprint; summing over the table's
+# shards gives data + index, matching the adapter contract.
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_env.sh
+crate_sql "SELECT COALESCE(sum(size), 0) FROM sys.shards WHERE table_name = '${CRATE_TABLE}'" \
+  | jq -r '.rows[0][0] // 0'

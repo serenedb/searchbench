@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Check host prereqs for the CrateDB adapter (docker backend).
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_env.sh
+
+for tool in curl jq docker python3; do
+    command -v "$tool" >/dev/null || die "required tool not on PATH: $tool"
+done
+"${SEARCHBENCH_PYTHON:-python3}" -c 'import requests' 2>/dev/null \
+  || die "python module 'requests' missing in '${SEARCHBENCH_PYTHON:-python3}'. Set SEARCHBENCH_PYTHON to a venv with it (pip install requests)."
+docker info >/dev/null 2>&1 \
+  || die "docker daemon not responding (try: systemctl start docker; or fix permissions)"
+
+echo "CrateDB backend: docker ($CRATE_IMAGE)"
+docker pull --quiet "$CRATE_IMAGE" >/dev/null   # idempotent, cached
+docker pull --quiet "$SERENED_IMAGE" >/dev/null # parquet reader
+echo "CRATE_DATA_DIR: $CRATE_DATA_DIR"
+
+# Don't wipe: a rerun keeps the existing table; ./load owns it.
+mkdir -p "$CRATE_DATA_DIR"
+chmod -R a+rwX "$CRATE_DATA_DIR" 2>/dev/null || true   # container runs as uid 1000
+
+echo
+echo "OS prerequisites (apply manually before ./start):"
+echo "  sudo sysctl -w vm.max_map_count=262144   # required by CrateDB"
+echo
+echo "Adapter ready. Run ./start to launch."
