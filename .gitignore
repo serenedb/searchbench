@@ -9,9 +9,12 @@ serenedb/serened.pid
 serenedb/serenedb_metrics.txt
 
 elastic/es-data/
+elastic/es-data-100m/
 elastic/es-smoke/
 
 opensearch/os-data/
+opensearch/os-data-100m/
+opensearch/os-data-1b/
 opensearch/os-smoke/
 
 parade/paradedb_data
@@ -26,3 +29,40 @@ notes.md
 launch_all.sh
 tiger/tiger_data/
 tiger-columnstore/tiger_data/
+
+
+
+
+
+
+
+
+elastic-columnar/es-data/
+elastic-columnar/es-smoke/
+
+cratedb/crate_data/
+
+victorialogs/vl-data/
+
+ravendb/raven-data/
+ravendb/license.json
+
+surrealdb/surreal-data/
+
+meilisearch/meili-data/
+
+typesense/ts-data/
+
+quickwit/qw-data/
+ydb/ydb-data/
+ydb/stage/
+clickhouse/clickhouse
+clickhouse/clickhouse_data/
+clickhouse/*.log
+clickhouse/.clickhouse.pid
+manticore/manticore_data/
+manticore/manticore-data/
+
+node_modules/
+frontend/.build/
+frontend/results.json.??????
