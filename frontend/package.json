@@ -33,7 +33,7 @@
     "playwright": "^1.49.0"
   },
   "workspaces": [
-    "vendor/serene-design"
+    "deps/third_party/serene-design"
   ],
   "engines": {
     "node": ">=22"

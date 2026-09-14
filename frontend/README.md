@@ -7,7 +7,8 @@ entry points and one set of components:
 - `src/index.ts` exports the product for a host such as SereneDB Playground.
   It does not import the standalone JSON or mount a second React root.
 
-All npm configuration, dependencies and commands live in `frontend/`:
+All npm configuration, dependencies and commands live in `frontend/`. The
+design-kit submodule is pinned at `frontend/deps/third_party/serene-design`.
 
 ```bash
 git submodule update --init --recursive
