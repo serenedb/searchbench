@@ -1,54 +1,11 @@
--- ClickHouse tagged workload, aligned 1:1 with serenedb (Q01-Q92).
---
--- The text index answers term/AND/OR/phrase directly (hasToken, hasAnyTokens,
--- hasAllTokens, matchPhrase). regexp / prefix / wildcard / fuzzy are NOT
--- expressible through it, but they ARE expressible in ClickHouse -- as
--- predicates over query-time tokenization:
---
---   tokens(lower(Body), 'splitByNonAlpha')
---
--- matching the index's own tokenizer and lower(Body) preprocessor, so the token
--- set is identical to what the index holds. On that array:
---   prefix / wildcard X*   startsWith(x, 'X')
---   wildcard *X            endsWith(x, 'X')
---   wildcard *X*           position(x, 'X') > 0
---   regexp X               match(x, '^X$')   -- anchored: Lucene regexp matches
---                                               a WHOLE term, not a substring
---   fuzzy X~N              damerauLevenshteinDistance(x, 'X') <= N
---                                            -- Damerau, as Lucene's FuzzyQuery
---                                               allows transpositions
---
--- These are FULL SCANS: the predicate is over a function of the column, not the
--- indexed expression, so no granule pruning applies (EXPLAIN shows all granules
--- read; hasToken on the same data is ~100x faster because it IS an index
--- lookup). They are correct but slow. That is the honest result -- the engine
--- can answer them, just not via the index -- and it is preferable to declaring
--- them unsupported, which overstated the limitation.
---
--- Each is guarded by a cheap substring PREFILTER so the expensive tokenize +
--- per-token predicate only runs on rows that could possibly match. The
--- prefilters are sound supersets, never narrowing the result:
---
---   prefix/wildcard/regexp:  a token matching X* / *X / *X* / ^X.*$ means the
---                            row's text contains that literal substring.
---   c.che (single-char mid): the token is c?che, so it contains 'che'.
---   fuzzy X~N:               pigeonhole. Split X into N+1 disjoint parts; an
---                            edit distance <= N can damage at most N of them,
---                            so at least one survives intact and must appear
---                            verbatim. 'connection' -> 'conne'+'ction' for N=1,
---                            'con'+'nec'+'tion' for N=2.
---   Q24 (fuzzy AND prefix):  the prefix conjunct already requires 'conn', which
---                            is stronger than the fuzzy split, so that is used.
---
--- Measured at 100m, same counts before and after:
---   Q22 fuzzy d<=1   12.651s -> 1.459s   (8.7x)
---   Q23 fuzzy d<=2   12.657s -> 5.267s   (2.4x)
---   Q20 prefix        1.427s -> 0.525s   (2.7x)
--- position() and LIKE prefilters measured identical (0.535s); neither engages
--- the text index, so this is purely about not tokenizing every row.
---
--- Still UNSUPPORTED (22): top_k BM25 (21) -- the text index carries no ranking
--- -- and one proximity query.
+-- regexp/prefix/wildcard/fuzzy are not expressible on the text index; they run
+-- as predicates over tokens(lower(Body),'splitByNonAlpha'), which matches the
+-- index tokenizer. These are full scans (~100x slower than hasToken), each
+-- guarded by a substring prefilter that is a sound superset -- for fuzzy X~N by
+-- pigeonhole: split X into N+1 parts, at most N can be damaged.
+-- Lucene regexp matches a WHOLE term, hence match(x,'^X$').
+-- 22 queries remain UNSUPPORTED: 21 top_k BM25 (text index carries no ranking)
+-- and one proximity.
 
 -- Q01 task=count filter=term freq=hi
 SELECT count() FROM otel_logs WHERE hasToken(Body, 'error');

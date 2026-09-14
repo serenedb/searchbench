@@ -1,6 +1,3 @@
--- OTel-logs schema, adopted verbatim from TextBench's clickhouse/create.sql.
--- DROP first so a re-run after a partial load starts clean (./install also
--- wipes the datadir, but this keeps the DDL self-contained).
 DROP TABLE IF EXISTS otel_logs;
 
 CREATE TABLE otel_logs
@@ -21,30 +18,12 @@ CREATE TABLE otel_logs
     `ScopeAttributes`    Map(LowCardinality(String), String) CODEC(ZSTD(1)),
     `LogAttributes`      Map(LowCardinality(String), String) CODEC(ZSTD(1)),
 
-    -- INVERTED INDEX ONLY. The `text` index over Body is a true inverted index
-    -- (token -> posting list) -- the analog of SereneDB's inverted index and the
-    -- only thing under test here. splitByNonAlpha + lower(Body) matches the
-    -- tokenization SereneDB applies (ts_split_by_non_alpha(Body, true)).
-    --
-    -- We deliberately do NOT add set()/minmax data-skipping indexes on
-    -- ServiceName / SeverityNumber / Timestamp: those are secondary skip indexes
-    -- (granule pruning), NOT inverted indexes, and ClickHouse has no inverted
-    -- index for categorical/numeric columns. So those predicates scan the
-    -- columnstore unindexed -- the honest inverted-index-only setup. (Note:
-    -- SereneDB *does* invert those columns; ClickHouse simply cannot.)
-    -- Positional postings are what let matchPhrase be resolved by the index
-    -- alone; without them the plan falls back to a hasPhrase() re-check on the
-    -- raw column (visible as a Prewhere filter in EXPLAIN indexes=1). From 26.9
-    -- the old `positions = 1` parameter is gone: positions are requested per
-    -- index via support_phrase_search, and the feature itself is gated by the
-    -- table setting below. Note that text_index_serialization_version defaults
-    -- to 'v2_with_positions', but that only names the on-disk format -- nothing
-    -- positional is actually written unless support_phrase_search = 1.
+    -- Inverted index only: no set()/minmax skip indexes, so non-Body predicates
+    -- scan. support_phrase_search=1 plus the table setting below are BOTH
+    -- required for positions; text_index_serialization_version only names the
+    -- on-disk format and writes nothing positional on its own.
     INDEX text_idx(Body) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(Body), support_phrase_search = 1)
 )
 ENGINE = MergeTree
--- No primary key: order by nothing, so rows keep insertion (row-id) order and
--- there is no sorting key. Acceleration comes from the skip indexes above, not
--- from a primary key on ServiceName/Timestamp.
 ORDER BY tuple()
 SETTINGS allow_experimental_text_index_phrase_search = 1;
