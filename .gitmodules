@@ -1,0 +1,3 @@
+[submodule "frontend/deps/serene-design"]
+	path = frontend/deps/serene-design
+	url = https://github.com/serenedb/serene-design.git
