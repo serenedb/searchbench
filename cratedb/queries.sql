@@ -136,11 +136,8 @@ SELECT date_trunc('minute', ts) AS bucket, count(*) AS cnt FROM otel_logs WHERE 
 -- Q66 task=group_by filter=and freq=hi (key=SeverityText, Body term + indexed service)
 SELECT severity_text, count(*) AS cnt FROM otel_logs WHERE MATCH(body_ft, 'failed') AND service_name = 'frontend' GROUP BY severity_text ORDER BY cnt DESC LIMIT 100;
 -- Q67 task=group_by filter=or freq=hi (two keys: SeverityText, ScopeName)
--- Both keys are required. This grouped by severity_text alone until
--- 2026-09-13, which collapsed the 7 real groups into 5 and made the query
--- ~5.5x cheaper than the one Elasticsearch and SereneDB run (5.84s vs the
--- 1.06s the one-key form reported at 1b). scope_name is INDEX OFF but the
--- columnstore keeps it groupable, so no schema change is needed.
+-- Both keys required: severity_text alone collapses 7 groups into 5 and is
+-- ~5.5x cheaper than the query the other engines run.
 SELECT severity_text, scope_name, count(*) AS cnt FROM otel_logs WHERE MATCH(body_ft, 'error failed') GROUP BY severity_text, scope_name ORDER BY cnt DESC LIMIT 20;
 -- Q68 task=recent filter=and,window freq=hi (recent failed-order logs from checkout)
 SELECT ts, service_name, severity_text, body FROM otel_logs WHERE MATCH(body_ft, 'failed order') USING best_fields WITH (operator='and') AND service_name = 'checkout' AND ts >= '2025-09-23T00:00:00' AND ts <= '2025-09-23T00:30:00' ORDER BY ts DESC LIMIT 100;

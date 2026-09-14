@@ -223,13 +223,26 @@ def translate(qid, dsl):
     if "aggs" in d:
         (name, agg), = d["aggs"].items()
         if "terms" in agg:
-            t = agg["terms"]; col = COL[t["field"]]
+            t = agg["terms"]; cols = [COL[t["field"]]]
+            # A nested terms sub-agg is a second grouping key. Ignoring it would
+            # silently emit a coarser (and much cheaper) query than the other
+            # engines run.
+            sub = agg.get("aggs")
+            while sub:
+                (_, s_agg), = sub.items()
+                if "terms" not in s_agg:
+                    raise ValueError(f"{qid}: unhandled sub-agg {set(s_agg)}")
+                cols.append(COL[s_agg["terms"]["field"]])
+                t = s_agg["terms"]
+                sub = s_agg.get("aggs")
+            col = cols[0]
             order = t.get("order", {})
             by = "cnt DESC" if order.get("_count") == "desc" else \
                  (f"{col} ASC" if order.get("_key") == "asc" else "cnt DESC")
             lim = f" LIMIT {int(t['size'])}" if "size" in t else ""
-            return (f"SELECT {col}, count(*) AS cnt FROM otel_logs WHERE {where} "
-                    f"GROUP BY {col} ORDER BY {by}{lim}")
+            keys = ", ".join(cols)
+            return (f"SELECT {keys}, count(*) AS cnt FROM otel_logs WHERE {where} "
+                    f"GROUP BY {keys} ORDER BY {by}{lim}")
         if "date_histogram" in agg:
             h = agg["date_histogram"]; col = COL[h["field"]]
             unit = h["calendar_interval"]
@@ -240,15 +253,18 @@ def translate(qid, dsl):
     size = d.get("size", 10)
     if size == 0:
         return f"SELECT count(*) FROM otel_logs WHERE {where}"
+    # Project exactly the fields _source names, so the row shape matches what
+    # the other engines fetch; PROJ is only the fallback.
+    proj = ", ".join(COL[f] for f in d["_source"]) if "_source" in d else PROJ
     sort = d.get("sort", [])
     if sort:
         (f, dirn), = sort[0].items()
         if f == "_score":
-            return (f"SELECT {PROJ}, _score FROM otel_logs WHERE {where} "
+            return (f"SELECT {proj}, _score FROM otel_logs WHERE {where} "
                     f"ORDER BY _score {dirn.upper()} LIMIT {size}")
-        return (f"SELECT {PROJ} FROM otel_logs WHERE {where} "
+        return (f"SELECT {proj} FROM otel_logs WHERE {where} "
                 f"ORDER BY {COL[f]} {dirn.upper()} LIMIT {size}")
-    return f"SELECT {PROJ} FROM otel_logs WHERE {where} LIMIT {size}"
+    return f"SELECT {proj} FROM otel_logs WHERE {where} LIMIT {size}"
 
 
 dsl = parse(ES_DSL)
