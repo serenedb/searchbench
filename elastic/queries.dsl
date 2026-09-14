@@ -168,6 +168,8 @@
 {"query":{"bool":{"must":[{"regexp":{"Body":"charg.*"}}],"filter":[{"range":{"Timestamp":{"gte":"2025-09-23T00:00:00","lte":"2025-09-23T06:00:00"}}}]}},"size":100,"_source":["Timestamp","ServiceName","SeverityText","Body"]}
 -- Q83 task=recent filter=or,window freq=mid (connection/request/conversion, NO order by)
 {"query":{"bool":{"must":[{"match":{"Body":{"query":"connection request conversion","operator":"or"}}}],"filter":[{"range":{"Timestamp":{"gte":"2025-09-23T00:00:00","lte":"2025-09-23T00:30:00"}}}]}},"size":100,"_source":["Timestamp","ServiceName","SeverityText","Body"]}
+-- Joins count distinct TraceIds as `STATS BY TraceId | STATS COUNT(*)`, not
+-- COUNT_DISTINCT, which is HyperLogLog++ and approximate. Same cost, exact.
 -- Q84 task=join filter=term freq=hi (frontend 'failed' traces that also involve payment)
 FROM otel_logs | WHERE ServiceName == "frontend" AND MATCH(Body, "failed") | LOOKUP JOIN trace_lookup ON TraceId | WHERE has_payment == true | STATS BY TraceId | STATS traces = COUNT(*)
 -- Q85 task=join filter=or freq=hi
