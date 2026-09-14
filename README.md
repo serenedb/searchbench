@@ -47,7 +47,7 @@ npm run build              # JSON + React UI -> frontend/index.html
 
 Commit both `frontend/results.json` and `frontend/index.html` when publishing
 updated results. `build_results` is a shell script, not an npm command. The
-previous `ui/build` and `ui/data.js` are replaced by these files.
+legacy `ui/` directory remains unchanged for now and can be removed separately.
 
 See [frontend/README.md](frontend/README.md) for embedding and build details.
 
