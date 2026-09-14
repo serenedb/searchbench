@@ -17,26 +17,38 @@ DROP VIEW IF EXISTS otel_logs CASCADE;
 
 DROP TEXT SEARCH DICTIONARY IF EXISTS en;
 
--- Tokenization is done by the SQL function ts_split_by_non_alpha(Body, true):
--- it lowercases (the `true` = to_lower) and splits on runs of non-alphanumeric
--- characters, returning text[]. The index is built over that expression, so
--- each token becomes a searchable term. The `en` dictionary is `keyword`
--- (verbatim: each array element is indexed as-is, no further analysis) with
--- frequency/norm/position enabled so BM25 scoring (top_k) and phrase/position
--- queries work.
+-- Tokenization is done by the ENGINE, through the `en` dictionary: split on
+-- runs of non-alphanumeric characters, lowercased via case='lower'. The index
+-- is on the plain column -- `inverted(Body en)` -- so queries read
+-- `Body @@ ...` and no SQL function appears on either side.
 --
--- NOTE: because the analyzer is `keyword`, the *query* side does not re-split
--- multi-word strings. Multi-token operators must be given pre-split tokens:
--- ts_all/ts_any take token arrays, and ts_phrase takes one token per argument
--- (ts_phrase('failed','to','place','order'), NOT ts_phrase('failed to ...')).
+-- This replaced an expression index over ts_split_by_non_alpha(Body, true)
+-- paired with a `keyword` dictionary. That arrangement was dropped for two
+-- reasons, the first of which is a correctness bug:
+--
+--   * `keyword` does no analysis on the QUERY side, and when two multi-term
+--     predicates were conjoined it lost rows. Q24 (fuzzy AND prefix) returned
+--     19,520,309 at 1b where Elasticsearch returns 19,520,322; Q29 was short by
+--     one. Isolated repro: a row holding 'connmmm cannection' satisfies
+--     levenshtein('connection',2) via one token and starts_with('conn') via
+--     another, and the keyword form dropped it -- 1 row instead of 2. Swapping
+--     only the dictionary to split_by_non_alpha fixed it with the expression
+--     index still in place, so the dictionary was the fault, not the index.
+--   * it cost ~3% on ingest: the function ran per row on the way in.
+--
+-- A consequence worth knowing: the analyzer now runs query-side too, so a
+-- needle is lowercased before lookup and `Body @@ 'FAILED'` matches. Under
+-- `keyword` it did not, which is why that schema needed pre-split,
+-- pre-lowercased tokens in every multi-token operator.
 CREATE TEXT SEARCH DICTIONARY en (
-    template  = 'keyword',   -- verbatim: index each token array element as-is
+    template  = 'split_by_non_alpha',  -- engine-side tokenizer
+    case      = 'lower',               -- fold to lowercase at index and query time
     frequency = true,        -- term frequency + field norms are
     norm      = true,        -- required for BM25 scoring (top_k queries)
     position  = true         -- token positions (phrase queries; enlarges the index)
 );
 
--- The parquet is only the source to ingest FROM — unlike create_view.sql, where
+-- The parquet is only the source to ingest FROM -- unlike create_view.sql, where
 -- this view is what the index is built on and what queries read. Column aliases
 -- are identical to that file so both schemas present the same names to
 -- queries.sql and the workload never has to change.
@@ -69,7 +81,7 @@ WITH (
 SELECT * FROM otel_logs WHERE false;
 
 CREATE INDEX otel_logs_search_inv ON otel_logs_idx USING inverted(
-    (ts_split_by_non_alpha(Body, true)) en
+    Body en
 );
 
 INSERT INTO otel_logs_idx SELECT * FROM otel_logs;

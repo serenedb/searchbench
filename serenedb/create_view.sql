@@ -21,20 +21,16 @@ DROP VIEW IF EXISTS otel_logs CASCADE;
 DROP TEXT SEARCH DICTIONARY IF EXISTS en;
 DROP TEXT SEARCH DICTIONARY IF EXISTS alnum_lower;
 
--- Tokenization is done by the SQL function ts_split_by_non_alpha(Body, true):
--- it lowercases (the `true` = to_lower) and splits on runs of non-alphanumeric
--- characters, returning text[]. The index is built over that expression, so
--- each token becomes a searchable term. The `en` dictionary is `keyword`
--- (verbatim: each array element is indexed as-is, no further analysis) with
--- frequency/norm/position enabled so BM25 scoring (top_k) and phrase/position
--- queries work.
---
--- NOTE: because the analyzer is `keyword`, the *query* side does not re-split
--- multi-word strings. Multi-token operators must be given pre-split tokens:
--- ts_all/ts_any take token arrays, and ts_phrase takes one token per argument
--- (ts_phrase('failed','to','place','order'), NOT ts_phrase('failed to ...')).
+-- Tokenization is done by the ENGINE through the `en` dictionary, matching
+-- create.sql: split on runs of non-alphanumerics, lowercased via case='lower',
+-- applied at index AND query time. The ts_split_by_non_alpha(Body, true)
+-- expression index with a `keyword` dictionary that this file used to carry was
+-- dropped along with create.sql's -- `keyword` does no query-side analysis and
+-- silently lost rows when two multi-term predicates were conjoined (Q24, Q29;
+-- see create.sql for the repro).
 CREATE TEXT SEARCH DICTIONARY en (
-    template  = 'keyword',   -- verbatim: index each token array element as-is
+    template  = 'split_by_non_alpha',  -- engine-side tokenizer
+    case      = 'lower',               -- fold to lowercase at index and query time
     frequency = true,        -- term frequency + field norms are
     norm      = true,        -- required for BM25 scoring (top_k queries)
     position  = true         -- token positions (phrase queries; enlarges the index)
@@ -59,12 +55,17 @@ SELECT
     logattributes as LogAttributes
 FROM read_parquet(:'parquet_glob');
 
--- Body is tokenized by ts_split_by_non_alpha(Body, true) at index-build time.
--- Queries match the SAME expression: `ts_split_by_non_alpha(Body, true) @@ ...`
--- against the index relation otel_logs_idx (an IRESEARCH_SCAN binds the @@ to
--- this indexed expression; a plain scan of the otel_logs view would seq-scan).
+-- Body is tokenized by the `en` dictionary at index-build time. Queries read
+-- `Body @@ ...` against the index relation otel_logs_idx (an IRESEARCH_SCAN
+-- binds the @@ to the indexed column; a plain scan of the otel_logs view would
+-- seq-scan).
+--
+-- NOTE: this file is a BACKUP of the index-over-parquet-view arrangement and is
+-- not what ./load runs -- that is create.sql. It was carried forward to the
+-- dictionary form so it stays consistent with queries.sql, but it has not been
+-- re-measured since the switch.
 CREATE INDEX otel_logs_idx ON otel_logs USING inverted(
-    (ts_split_by_non_alpha(Body, true)) en
+    Body en
 )
 INCLUDE (
     Timestamp,
