@@ -1,6 +1,6 @@
--- body keeps its plain index as well as body_ft: CrateDB's `~` regex operator
--- silently returns zero rows against an INDEX OFF column, and eight queries are
--- regex-based.
+-- body is indexed twice: the default plain index plus body_ft. The plain one
+-- exists only for `~`, which silently returns zero rows against an INDEX OFF
+-- column (LIKE and MATCH work either way). Only Q19 and Q26 use it.
 -- Shard count is CrateDB's default (4 here); replicas pinned to 0 because the
 -- 0-1 default would auto-expand if a node were added.
 
