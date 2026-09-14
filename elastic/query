@@ -18,7 +18,7 @@ trimmed=$(printf '%s' "$q" | sed -e 's/^[[:space:]]*//')
 if [[ "${trimmed:0:1}" == "{" ]]; then
     # DSL _search. Emit rows per response shape (mirrors opensearch/query):
     #   group_by -> agg buckets; top_k/recent -> _source rows; count -> total
-    url="$ES_URL/$INDEX/_search"; payload="$q"
+    url="$ES_URL/$INDEX/_search?request_cache=false"; payload="$q"
     filter='if (.aggregations != null) then
               (.aggregations | to_entries[] | .value.buckets[]? | {key: (.key_as_string // .key), doc_count})
             elif ((.hits.hits | length) > 0) then
