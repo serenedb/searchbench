@@ -1,31 +1,3 @@
--- SereneDB tagged query workload over otel_logs_idx.
--- One runnable statement per line; the preceding `-- Qnn task=... filter=...
--- freq=...` comment carries its tags (lib/benchmark.sh skips -- and blank lines).
---
--- ORGANIZATION: queries are grouped by task in contiguous blocks --
---   COUNT (Q01-32) -> TOP-K (Q33-53) -> GROUP-BY (Q54-67) -> RECENT (Q68-76)
---   -> JOIN (Q77-85). Within COUNT and TOP-K the 2/4/8-token pattern is applied
---   to and/or/phrase; all levenshtein/fuzzy queries sit together; regexp and
---   wildcard(LIKE) variants sit together.
---
--- TAGS
---   task   : count | top_k | group_by | recent | join
---   filter : term | and | or | phrase | proximity | minmatch | regexp | prefix
---            | fuzzy | like | negation | window   (one or more, comma-joined)
---   freq   : hi (>50k) | mid (10-50k) | lo (<5k)   (Body-term frequency, 1m slice)
---
--- CONVENTIONS
---  * Body is tokenized by Body; queries match that
---    same expression (binds the inverted index on otel_logs_idx). The `keyword`
---    dict does not re-split, so phrase args are given one token per argument.
---  * Timestamp ranges use BETWEEN (inclusive). Windows are sized for real
---    day-spanning scales; on the <2s 1m slice they are non-selective.
---  * Term freqs (1m): failed 129k, error 101k, charge 68k, order 66k, cache 57k
---    (hi); connection 30k, place 31k, service 24k, request 19k, conversion 15k,
---    post 15k (mid); email 6.6k, confirmation 5.2k, send 5k, refused 2.6k,
---    payment 1.7k, expected 1.1k (lo).
-
--- ============================ COUNT ============================
 -- Q01 task=count filter=term freq=hi
 SELECT count(*) FROM otel_logs_idx WHERE Body @@ 'error';
 -- Q02 task=count filter=term freq=lo
@@ -91,7 +63,6 @@ SELECT count(*) FROM otel_logs_idx WHERE ServiceName = 'frontend' AND Body @@ 'f
 -- Q32 task=count filter=or,window freq=mid (8-token OR within a BETWEEN 6h window)
 SELECT count(*) FROM otel_logs_idx WHERE Body @@ ts_any(['payment', 'exception', 'refused', 'send', 'confirmation', 'email', 'expected', 'deadline']) AND Timestamp BETWEEN TIMESTAMP '2025-09-23 00:00:00' AND TIMESTAMP '2025-09-23 06:00:00';
 
--- ============================ TOP-K (BM25 score DESC, LIMIT 100) ============================
 -- Q33 task=top_k filter=term freq=hi
 SELECT Timestamp, ServiceName, Body, BM25(otel_logs_idx.tableoid) AS score FROM otel_logs_idx WHERE Body @@ 'charge' ORDER BY BM25(otel_logs_idx.tableoid) DESC LIMIT 100;
 -- Q34 task=top_k filter=term freq=mid
@@ -135,7 +106,6 @@ SELECT Timestamp, ServiceName, Body, BM25(otel_logs_idx.tableoid) AS score FROM 
 -- Q53 task=top_k filter=and,window freq=hi (term + service + Timestamp BETWEEN 6h)
 SELECT Timestamp, ServiceName, Body, BM25(otel_logs_idx.tableoid) AS score FROM otel_logs_idx WHERE ServiceName = 'payment' AND Body @@ 'charge' AND Timestamp BETWEEN TIMESTAMP '2025-09-23 00:00:00' AND TIMESTAMP '2025-09-23 06:00:00' ORDER BY BM25(otel_logs_idx.tableoid) DESC LIMIT 100;
 
--- ============================ GROUP BY ============================
 -- Q54 task=group_by filter=or freq=hi (key=SeverityText, ordered)
 SELECT SeverityText, count(*) AS cnt FROM otel_logs_idx WHERE Body @@ ts_any(['error', 'failed']) GROUP BY SeverityText ORDER BY cnt DESC;
 -- Q55 task=group_by filter=term freq=hi (key=SeverityText, ordered)
@@ -165,7 +135,6 @@ SELECT SeverityText, count(*) AS cnt FROM otel_logs_idx WHERE ServiceName = 'fro
 -- Q67 task=group_by filter=or freq=hi (two keys: SeverityText, ScopeName)
 SELECT SeverityText, ScopeName, count(*) AS cnt FROM otel_logs_idx WHERE Body @@ ts_any(['error', 'failed']) GROUP BY SeverityText, ScopeName ORDER BY cnt DESC LIMIT 20;
 
--- ============================ RECENT (Timestamp BETWEEN window + ORDER BY Timestamp DESC LIMIT 100) ============================
 -- Q68 task=recent filter=and,window freq=hi (recent failed-order logs from checkout)
 SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs_idx WHERE ServiceName = 'checkout' AND Body @@ ts_all(['failed', 'order']) AND Timestamp BETWEEN TIMESTAMP '2025-09-23 00:00:00' AND TIMESTAMP '2025-09-23 00:30:00' ORDER BY Timestamp DESC LIMIT 100;
 -- Q69 task=recent filter=or,window freq=hi (recent error/failed/charge, severity>=warn)
@@ -182,7 +151,6 @@ SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs_idx WHERE Servi
 SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs_idx WHERE Body @@ ts_regexp('charg.*') AND Timestamp BETWEEN TIMESTAMP '2025-09-23 00:00:00' AND TIMESTAMP '2025-09-23 06:00:00' ORDER BY Timestamp DESC LIMIT 100;
 -- Q75 task=recent filter=or,window freq=mid (recent connection/request/conversion logs)
 SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs_idx WHERE Body @@ ts_any(['connection', 'request', 'conversion']) AND Timestamp BETWEEN TIMESTAMP '2025-09-23 00:00:00' AND TIMESTAMP '2025-09-23 00:30:00' ORDER BY Timestamp DESC LIMIT 100;
--- ---- RECENT without ORDER BY (windowed filter + LIMIT only; mirrors Q68-Q75, no sort) ----
 -- Q76 task=recent filter=and,window freq=hi (checkout failed&order, NO order by)
 SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs_idx WHERE ServiceName = 'checkout' AND Body @@ ts_all(['failed', 'order']) AND Timestamp BETWEEN TIMESTAMP '2025-09-23 00:00:00' AND TIMESTAMP '2025-09-23 00:30:00' LIMIT 100;
 -- Q77 task=recent filter=or,window freq=hi (error/failed/charge sev>=warn, NO order by)
@@ -200,7 +168,7 @@ SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs_idx WHERE Body 
 -- Q83 task=recent filter=or,window freq=mid (connection/request/conversion, NO order by)
 SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs_idx WHERE Body @@ ts_any(['connection', 'request', 'conversion']) AND Timestamp BETWEEN TIMESTAMP '2025-09-23 00:00:00' AND TIMESTAMP '2025-09-23 00:30:00' LIMIT 100;
 
--- ============================ JOIN (self-join on TraceId; count(DISTINCT a.TraceId); TraceId<>'' drops the empty bucket) ============================
+-- Joins: self-join on TraceId; TraceId <> '' drops the empty bucket.
 -- Q84 task=join filter=term freq=hi (frontend 'failed' traces that also involve payment)
 SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.ServiceName = 'frontend' AND a.Body @@ 'failed' AND b.ServiceName = 'payment';
 -- Q85 task=join filter=or freq=hi
