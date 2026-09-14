@@ -22,8 +22,9 @@
 --   * No primary key: `id` is a plain row-id used only as pg_search's key_field.
 --
 -- Tokenizer: body uses `pdb.simple` -- lowercase + split on runs of
--- non-alphanumeric characters, matching ClickHouse splitByNonAlpha and SereneDB
--- ts_split_by_non_alpha(body, true). 'columnar=true' makes it a fast field too.
+-- non-alphanumeric characters, matching ClickHouse splitByNonAlpha and
+-- SereneDB's `en` dictionary (split_by_non_alpha). 'columnar=true' makes it a
+-- fast field too.
 -- Verified on pg_search 0.24.1: 'A_b dog_runs 3.14 e.f'::pdb.simple ->
 -- {a,b,dog,runs,3,14,e,f}; record defaults to `position`, so phrase queries
 -- work. paradedb.schema() reports this tokenizer as `default` (pg_search's
