@@ -14,7 +14,16 @@
        widget keeps `dragSys` in a ref, swallows the click that ends a drag as
        the original did, and dispatches the finished order as `reorder`. */
 
-import type { BenchState, Metric, PanelId, Scale, SortDir, Tab, ValueMode } from './state';
+import {
+  DEFAULT_SORT_ROW,
+  type BenchState,
+  type Metric,
+  type PanelId,
+  type Scale,
+  type SortDir,
+  type Tab,
+  type ValueMode,
+} from './state';
 
 export type BenchAction =
   | { type: 'tab'; value: Tab }
@@ -64,6 +73,17 @@ export function benchReducer(state: BenchState, action: BenchAction): BenchState
       return {
         ...state,
         dataset: action.name,
+        // Another dataset is another set of engines and another set of numbers,
+        // so the columns go back to the default order (DEFAULT_SORT_ROW) rather
+        // than staying sorted by a row that may not even be in the new data —
+        // `q:Q88` against a dataset without Q88 ranks every engine Infinity and
+        // silently degrades to a sort by name.
+        sortRow: DEFAULT_SORT_ROW,
+        sortDir: 1,
+        // `manualOrder` deliberately survives: a hand-dragged arrangement is
+        // how you compare the same two engines across datasets, and it is
+        // cleared by any click on a row label.
+        //
         // The selection names an engine × query in the old dataset; keeping it
         // would show another engine's query text under the same title.
         sel: null,

@@ -6,8 +6,8 @@
    ones — the participants list and the drag-reorder handler need that, because
    hiding an engine must not renumber the rest. */
 
-import type { BenchState } from '../model/state';
-import { geomeanMap, metricValue } from './metrics';
+import { DEFAULT_SORT_ROW, type BenchState } from '../model/state';
+import { coverageMap, geomeanMap, metricValue } from './metrics';
 import { passesTagFilter, type BenchRow } from './rows';
 
 /** What `sortKeyMap` reads. `BenchState` satisfies it. */
@@ -24,6 +24,11 @@ export type OrderOpts = Pick<
  * system → the number the current sort row ranks it by. Missing values sort
  * last (`Infinity`); an unknown row key ranks everything equal, which leaves
  * the name tiebreak in `metricSorted` as the only ordering.
+ *
+ * `DEFAULT_SORT_ROW` is among the keys that rank everything equal here, and
+ * deliberately: it is three keys, not one number, so `metricSorted` intercepts
+ * it before this is called. Nothing else reads it, which is why there is no
+ * fourth branch below.
  */
 export function sortKeyMap(
   list: BenchRow[],
@@ -54,12 +59,47 @@ export function sortKeyMap(
   return m;
 }
 
+/**
+ * The default order: most of the workload supported first, then most of it
+ * finished, then fastest — `DEFAULT_SORT_ROW` spelled out.
+ *
+ * The two counts are descending and the geomean ascending, because "better" is
+ * up for one and down for the other; `sortDir` flips all three together, so a
+ * descending default is the worst engine first by the same three questions.
+ * The name tiebreak stays ascending, as it is in `metricSorted`.
+ *
+ * A geomean of `null` — an engine that finished nothing — sorts last among
+ * engines it is tied with on both counts, the same `Infinity` a missing value
+ * gets in `sortKeyMap`.
+ */
+function coverageSorted<R extends BenchRow>(
+  list: R[],
+  ids: readonly string[],
+  opts: SortOpts,
+): R[] {
+  const cov = coverageMap(list, ids, opts.metric);
+  const geo = geomeanMap(list, ids, opts.metric);
+  const dir = opts.sortDir;
+  const zero = { supported: 0, completed: 0 };
+  return [...list].sort((a, b) => {
+    const ca = cov.get(a.system) ?? zero;
+    const cb = cov.get(b.system) ?? zero;
+    if (ca.supported !== cb.supported) return (cb.supported - ca.supported) * dir;
+    if (ca.completed !== cb.completed) return (cb.completed - ca.completed) * dir;
+    const ga = geo.get(a.system) ?? Infinity;
+    const gb = geo.get(b.system) ?? Infinity;
+    if (ga !== gb) return ga < gb ? -dir : dir;
+    return a.system.localeCompare(b.system);
+  });
+}
+
 /** `list` sorted by the current row, name-tiebroken. Does not mutate `list`. */
 export function metricSorted<R extends BenchRow>(
   list: R[],
   ids: readonly string[],
   opts: SortOpts,
 ): R[] {
+  if (opts.sortRow === DEFAULT_SORT_ROW) return coverageSorted(list, ids, opts);
   const km = sortKeyMap(list, ids, opts);
   return [...list].sort((a, b) => {
     const va = km.get(a.system)!;
@@ -70,6 +110,10 @@ export function metricSorted<R extends BenchRow>(
 
 /**
  * The engines the table and the charts draw, in column order.
+ *
+ * With no sort of the reader's own — a fresh view, or the one a dataset switch
+ * returns to — that is `coverageSorted`: coverage, completion, speed. See
+ * `DEFAULT_SORT_ROW`.
  *
  * @param rows every row for the current dataset — `rowsFor(ds)`
  * @param ids  the visible query ids — `visibleQIDS(state.activeQTasks)`

@@ -38,6 +38,24 @@ export const HIDEABLE_PANELS: ReadonlySet<PanelId> = new Set<PanelId>([
   'expand',
 ]);
 
+/**
+ * The column order a fresh view opens in, and the one a dataset switch returns
+ * to — the only `sortRow` that is not a row of the table.
+ *
+ * No single row ranks an engine the way a reader ranks one. The Geomean row
+ * drops the queries an engine could not express and the ones it was killed on
+ * (see `geomeanMap`), so sorting by it alone puts an engine that answered five
+ * queries quickly above one that answered ninety-two slightly slower. The
+ * default order asks the two questions the geomean cannot, in the order a
+ * reader asks them: how much of the workload does it run, how much of that does
+ * it finish, and only then how fast. See `orderedVisible`.
+ *
+ * Clicking any row label still sorts by that row and nothing else — a label
+ * that says "sort engines by this row" has to mean it, which is why this is a
+ * separate key rather than a redefinition of 'geomean'.
+ */
+export const DEFAULT_SORT_ROW = 'default';
+
 /** The cell the query panel is showing: engine × query id. */
 export interface CellSelection {
   sys: string;
@@ -51,7 +69,8 @@ export interface BenchState {
   valueMode: ValueMode;
   tab: Tab;
   scale: Scale;
-  /** Row the engines are sorted by: 'geomean' | 'load' | 'size' | `q:${id}` | ''. */
+  /** Row the engines are sorted by: DEFAULT_SORT_ROW | 'geomean' | 'load' |
+      'size' | `q:${id}` | ''. */
   sortRow: string;
   sortDir: SortDir;
   /** Engines the user switched off, by `system`. */
@@ -78,7 +97,7 @@ export const INITIAL_STATE: BenchState = {
   valueMode: 'relative',
   tab: 'table',
   scale: 'log',
-  sortRow: 'geomean',
+  sortRow: DEFAULT_SORT_ROW,
   sortDir: 1,
   hidden: new Set(),
   activeTags: new Set(),

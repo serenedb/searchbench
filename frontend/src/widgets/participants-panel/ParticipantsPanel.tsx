@@ -40,8 +40,9 @@ export function ParticipantsPanel({
   dispatch,
 }: {
   ds: string | null;
-  /** The visible query ids — `visibleQIDS(state.activeQTasks)`. The order is a
-      geomean when `sortRow` is "geomean", so it depends on the query filter. */
+  /** The visible query ids — `visibleQIDS(state.activeQTasks)`. Both the
+      default order and a geomean sort are computed over exactly these, so the
+      list re-ranks with the query filter. */
   ids: readonly string[];
   state: BenchState;
   dispatch: Dispatch<BenchAction>;

@@ -96,3 +96,42 @@ export function geomeanMap(
   }
   return out;
 }
+
+/** How much of the workload an engine actually answered. `coverageMap`. */
+export interface Coverage {
+  /** Queries it has a number for. The rest it could not express at all. */
+  supported: number;
+  /** Of those, the ones that came back under the cap rather than being killed. */
+  completed: number;
+}
+
+/**
+ * Per engine: how many of `ids` it ran, and how many of those finished.
+ *
+ * The two counts the default column order ranks by, before the geomean breaks
+ * the tie. They are deliberately counts over the *visible* ids, like the
+ * geomean, so filtering the categories re-ranks on the filtered workload.
+ *
+ * `supported` and `completed` are nested, not disjoint: a timeout is a query
+ * the engine expressed and did not answer, so it counts once in `supported`
+ * and not in `completed`.
+ */
+export function coverageMap(
+  list: BenchRow[],
+  ids: readonly string[],
+  metric: Metric,
+): Map<string, Coverage> {
+  const out = new Map<string, Coverage>();
+  for (const r of list) {
+    let supported = 0;
+    let completed = 0;
+    for (const id of ids) {
+      const v = metricValue(r, id, metric);
+      if (typeof v !== 'number') continue;
+      supported++;
+      if (!isTimeout(v)) completed++;
+    }
+    out.set(r.system, { supported, completed });
+  }
+  return out;
+}
