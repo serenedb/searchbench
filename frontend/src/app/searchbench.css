@@ -1,0 +1,533 @@
+/* ---------------------------------------------------------------------------
+   searchbench — ui/index.html's <style> block, ported.
+
+   Values are copied literally. Where a selector had to change, only the
+   selector changed; every colour, every border width, every padding is the
+   byte the standalone shipped, because the screenshot harness compares this
+   against the untouched original.
+
+   Three selector rewrites, and no others:
+
+   1. The palette moves off :root. The original wrote it to :root and swapped
+      it with `data-theme` on <html>; the playground signals dark with a `.dark`
+      class on <html> and the theme belongs to the platform toggle. So light is
+      the base and dark sits under `:is(.dark)`, the way the kit and the other
+      three products do it. Both branches were always applied explicitly in the
+      standalone (`applyTheme` always set the attribute), so nothing about which
+      colours land when has changed.
+
+   2. …and it hangs on `.sb-app`, not on `[data-product='searchbench']`.
+      `.sb-app` is the ported `#app`, which was the whole page, so the tokens
+      reach exactly what they used to. Still scoped under `[data-product]`:
+      nothing here can reach another service.
+
+      Two of these names — `--card` and `--accent` — are kit token names too,
+      and the strip at the top of the page is partly the kit's (the service
+      switcher). `--card` is the same colour in both palettes, so it is a
+      collision on paper only; `--accent` is not, and the switcher is written
+      out of `secondary`/`muted`/`border`/`thirdly`, none of which this file
+      touches. Anything else from the kit that lands inside `.sb-app` wants
+      checking against this list first.
+
+   3. Element rules (`a`, `button`, the scrollbars, `box-sizing`) that the
+      original applied globally apply inside `.sb-app` instead.
+
+   Two rules exist here that the original did not need, both restoring a UA
+   default the shell's Tailwind preflight takes away — see `line-height` and
+   `tab-size` on `.sb-app`. The standalone loaded no reset at all.
+
+   A third has nothing to do with the port: `.sb-brand`, which puts back what
+   the shell's base layer takes off a link the standalone did not have. See it.
+--------------------------------------------------------------------------- */
+
+/* :root[data-theme="light"] */
+[data-product='searchbench'] .sb-app {
+    --bg: #ffffff;
+    --card: #ffffff;
+    --head: #f7f7f7;
+    --inset: #f0f2f5;
+    --fg: #11121d;
+    --mut: #506182;
+    --line: #e7e7e7;
+    --line2: #f0f0f0;
+    --accent: #895af8;
+    --blue: #3386ff;
+    --link: #4a7aad;
+    --na: #f0f2f5;
+    color-scheme: light;
+
+    /* The theme-independent half of the original's :root block. */
+    --shadow-mix: 35%;
+    --pad-y: 4px;
+    /* dithered pixel drop-shadow mask */
+    --dither: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%224%22 height=%225%22 viewBox=%220 0 4 5%22%3E%3Crect x=%22.75%22 y=%22.75%22 width=%22.8%22 height=%221.5%22 fill=%22black%22/%3E%3Crect x=%222.65%22 y=%223%22 width=%22.8%22 height=%221.5%22 fill=%22black%22/%3E%3C/svg%3E');
+    --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* :root, :root[data-theme="dark"] */
+:is(.dark) [data-product='searchbench'] .sb-app {
+    --bg: #1c1c1c;
+    --card: #212121;
+    --head: #262626;
+    --inset: #151515;
+    --fg: #ffffff;
+    --mut: #bbbbbb;
+    --line: rgba(255, 255, 255, 0.12);
+    --line2: rgba(255, 255, 255, 0.07);
+    --accent: #895af8;
+    --blue: #3386ff;
+    --link: #80beff;
+    --na: #1a1a1a;
+    color-scheme: dark;
+}
+
+/* ---- the page root: `body` + `#app`, on one element ---------------------- */
+
+[data-product='searchbench'] .sb-app,
+[data-product='searchbench'] .sb-app * {
+    box-sizing: border-box;
+}
+
+[data-product='searchbench'] .sb-app {
+    /* body */
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Gilroy', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+        sans-serif;
+
+    /* Two UA defaults the standalone inherited and the shell overrides. It
+       loaded no reset, so everything that did not name a line-height computed
+       `normal` — a 10.5px chip is ~12px tall there and 15.75px under Tailwind's
+       `line-height: 1.5` on <html>, which is enough to resize every panel on
+       the page. tab-size is the same story for the query plan's <pre>. Both are
+       scoped below the header, which wants the playground's defaults. */
+    line-height: normal;
+    tab-size: 8;
+
+    /* #app */
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    width: 100%;
+    /* The standalone's own number, and for its own reason: this element draws
+       the top bar inside itself, so it is still the whole viewport. It stopped
+       being that for as long as the platform header sat above it in normal
+       flow — `calc(100dvh - var(--platform-header-h-ceil))` is what that
+       cost. */
+    height: 100dvh;
+    padding: 14px;
+    font-size: 13px;
+    overflow: hidden;
+
+    /* What `<meta name="viewport" content="width=1280">` bought the standalone.
+       That tag made phones lay the full desktop UI out at 1280 CSS px and zoom
+       it to fit — a small PC site, not a reflowed mobile one. A route inside a
+       shared SPA cannot set it: there is one <head> for four products.
+
+       So the layout is pinned to the width it was designed at and the page
+       scrolls sideways instead of zooming. Without this line the grid does not
+       degrade gracefully, it degrades absurdly: `300px 1fr` in a 375px viewport
+       leaves the results panel 33px wide. 1280 is the standalone's own number,
+       not a new breakpoint, and at any window ≥ 1280 this rule does nothing —
+       `width: 100%` still wins, and the 1280 screenshots are unaffected.
+
+       Delete this one line to get the squeeze instead. There is no third option
+       that is not a responsive design the original never had. */
+    min-width: 1280px;
+}
+
+[data-product='searchbench'] .sb-app a {
+    color: var(--link);
+    text-decoration: none;
+}
+[data-product='searchbench'] .sb-app a:hover {
+    color: var(--accent);
+}
+
+/* The one link the standalone did not have: `SereneDB / SearchBench`, whose
+   two halves colour themselves, so `a { color: var(--link) }` must not. The
+   shell's base layer also fades every link to 0.7 on hover — the platform
+   header cancels that on its own copy of this link (`hover:opacity-100`) and so
+   does this. Specificity is why it is written out the long way: the two rules
+   above are 0-2-1 and 0-2-2, and a bare `.sb-brand` would lose to both. */
+[data-product='searchbench'] .sb-app .sb-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    color: var(--fg);
+}
+[data-product='searchbench'] .sb-app .sb-brand:hover {
+    color: var(--fg);
+    opacity: 1;
+}
+[data-product='searchbench'] .sb-app button {
+    font-family: inherit;
+}
+
+/* Named from inline `animation:` styles, so the name is the API. @keyframes is
+   document-global and unscopeable by nature — the `sb-` prefix is what keeps it
+   from colliding with another product's. */
+@keyframes sb-blink {
+    0%,
+    55% {
+        opacity: 1;
+    }
+    56%,
+    100% {
+        opacity: 0;
+    }
+}
+
+[data-product='searchbench'] .sb-app::-webkit-scrollbar,
+[data-product='searchbench'] .sb-app *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+[data-product='searchbench'] .sb-app::-webkit-scrollbar-thumb,
+[data-product='searchbench'] .sb-app *::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+}
+[data-product='searchbench'] .sb-app::-webkit-scrollbar-track,
+[data-product='searchbench'] .sb-app *::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* ---- pixel-shadow card --------------------------------------------------- */
+[data-product='searchbench'] .panel {
+    position: relative;
+    isolation: isolate;
+    padding: 0 8.5px 8.5px 0;
+    flex-shrink: 0;
+}
+[data-product='searchbench'] .panel.grow {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+}
+[data-product='searchbench'] .panel > .sh {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: calc(100% - 8.5px);
+    height: calc(100% - 8.5px);
+    background: color-mix(in srgb, var(--fg) var(--shadow-mix), transparent);
+    -webkit-mask: var(--dither) repeat;
+    mask: var(--dither) repeat;
+    -webkit-mask-size: 4px 5px;
+    mask-size: 4px 5px;
+    pointer-events: none;
+}
+[data-product='searchbench'] .panel > .bd {
+    position: relative;
+    z-index: 1;
+    border: 0.5px solid var(--line);
+    background: var(--card);
+}
+/* The top strip, and the only panel that has anything to show outside itself:
+   the switcher menu drops out of it and over the panels below. Every `.panel`
+   is its own stacking context (`isolation: isolate` above), so painting order
+   is DOM order and the first one loses to all of them — hence a z-index, and a
+   small one: the explain modal is 60 and has to keep winning. */
+[data-product='searchbench'] .panel.sb-head {
+    z-index: 2;
+}
+
+[data-product='searchbench'] .bd.fill {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---- panel head ---------------------------------------------------------- */
+[data-product='searchbench'] .ph {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-bottom: 0.5px solid var(--line);
+    background: var(--head);
+    flex-shrink: 0;
+}
+[data-product='searchbench'] .ph .pr {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 11px;
+}
+[data-product='searchbench'] .ph .pt {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--mut);
+}
+[data-product='searchbench'] .ph .note {
+    font-size: 10px;
+    color: var(--mut);
+}
+[data-product='searchbench'] .ph .link {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+    cursor: pointer;
+}
+
+/* ---- segmented control --------------------------------------------------- */
+[data-product='searchbench'] .seg {
+    display: flex;
+    background: var(--inset);
+    border: 0.5px solid var(--line);
+    padding: 2px;
+    gap: 2px;
+}
+[data-product='searchbench'] .seg button {
+    border: 0;
+    cursor: pointer;
+    font-weight: 700;
+    background: transparent;
+    color: var(--mut);
+    line-height: 1.3;
+}
+[data-product='searchbench'] .seg button.on {
+    background: var(--accent);
+    color: #fff;
+}
+[data-product='searchbench'] .seg button:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+    color: var(--mut);
+}
+
+/* ---- chips --------------------------------------------------------------- */
+[data-product='searchbench'] .chip {
+    border: 0.5px solid var(--line);
+    background: transparent;
+    color: var(--mut);
+    padding: 3px 8px;
+    font-size: 10.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+[data-product='searchbench'] .chip.on {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+}
+
+/* ---- sidebar rows -------------------------------------------------------- */
+[data-product='searchbench'] .dsrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border: 0.5px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+}
+[data-product='searchbench'] .prow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 7px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    flex-shrink: 0;
+}
+[data-product='searchbench'] .prow:hover {
+    background: var(--inset);
+}
+
+/* ---- table --------------------------------------------------------------- */
+[data-product='searchbench'] .tscroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    position: relative;
+}
+[data-product='searchbench'] .thead {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: grid;
+    width: max-content;
+    min-width: 100%;
+    background: var(--head);
+}
+[data-product='searchbench'] .thead .corner {
+    position: sticky;
+    left: 0;
+    z-index: 6;
+    background: var(--head);
+    border-bottom: 0.5px solid var(--line);
+    border-right: 0.5px solid var(--line);
+    padding: 5px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--mut);
+}
+[data-product='searchbench'] .engcol {
+    border-bottom: 0.5px solid var(--line);
+    border-right: 0.5px solid var(--line);
+    padding: 5px 7px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    color: var(--fg);
+    line-height: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+[data-product='searchbench'] .engcol .grip {
+    color: var(--mut);
+    font-size: 9px;
+    margin-right: 5px;
+}
+[data-product='searchbench'] .engcol .sm {
+    display: inline-block;
+    width: 12px;
+    margin-left: 4px;
+    text-align: center;
+    color: var(--accent);
+}
+[data-product='searchbench'] .engcol.dragover {
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+[data-product='searchbench'] .trow {
+    display: grid;
+    width: max-content;
+    min-width: 100%;
+}
+[data-product='searchbench'] .section {
+    border-bottom: 0.5px solid var(--line);
+    background: var(--bg);
+    padding: 9px 0 4px;
+}
+[data-product='searchbench'] .section span {
+    position: sticky;
+    left: 12px;
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--mut);
+}
+[data-product='searchbench'] .rowlab {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--card);
+    border: 0;
+    border-bottom: 0.5px solid var(--line);
+    border-right: 0.5px solid var(--line);
+    padding: var(--pad-y) 8px;
+    text-align: left;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 16px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+[data-product='searchbench'] .rowlab:hover {
+    color: var(--accent);
+}
+[data-product='searchbench'] .rowlab .mk {
+    display: inline-block;
+    width: 11px;
+    text-align: center;
+    color: var(--accent);
+}
+[data-product='searchbench'] .rowlab .tg {
+    opacity: 0.55;
+    font-size: 10.5px;
+    font-weight: 500;
+    margin-left: 7px;
+}
+[data-product='searchbench'] .cell {
+    border-bottom: 0.5px solid rgba(0, 0, 0, 0.1);
+    border-right: 0.5px solid rgba(0, 0, 0, 0.14);
+    padding: var(--pad-y) 7px;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+[data-product='searchbench'] .cell.q {
+    cursor: pointer;
+}
+[data-product='searchbench'] .cell.q:hover {
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+[data-product='searchbench'] .legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 6px 12px;
+    border-top: 0.5px solid var(--line);
+    background: var(--head);
+    flex-shrink: 0;
+    font-size: 10.5px;
+    color: var(--mut);
+}
+[data-product='searchbench'] .legend .sw {
+    width: 9px;
+    height: 9px;
+    display: inline-block;
+}
+[data-product='searchbench'] .swatch {
+    width: 9px;
+    height: 9px;
+    flex-shrink: 0;
+    display: inline-block;
+}
+
+/* ---- charts -------------------------------------------------------------- */
+[data-product='searchbench'] .barlab {
+    width: 110px;
+    flex-shrink: 0;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+[data-product='searchbench'] .bartxt {
+    width: 74px;
+    flex-shrink: 0;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--mut);
+}
+
+/* ---- explain modal ------------------------------------------------------- */
+[data-product='searchbench'] .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(0, 0, 0, 0.68);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 36px;
+}

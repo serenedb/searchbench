@@ -1,0 +1,4 @@
+@import "tailwindcss";
+@import "@serenedb/ui/styles.css";
+@source "../deps/serene-design/src";
+@source "./";
