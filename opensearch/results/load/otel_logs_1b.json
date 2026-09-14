@@ -1,0 +1,11 @@
+{
+  "engine": "OpenSearch",
+  "dataset": "otel_logs_1b",
+  "build": "",
+  "engine_version": "3.8.0",
+  "load_time": 11593.821,
+  "data_size": 146603821835,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-09-07",
+  "loaded_by": "queries.dsl"
+}
