@@ -1,0 +1,1 @@
+../clickhouse/textbench_queries.sql
