@@ -1,10 +1,10 @@
 {
   "engine": "SereneDB",
-  "dataset": "otel_logs_100m",
+  "dataset": "otel_logs_10b",
   "build": "",
   "engine_version": "26.09.1",
-  "load_time": 34.531,
-  "data_size": 12012299307,
+  "load_time": 3033.785,
+  "data_size": 1205008745517,
   "os": "Ubuntu 24.04.4 LTS",
   "date": "2026-09-16",
   "loaded_by": "queries.sql"

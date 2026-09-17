@@ -168,22 +168,25 @@ SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs_idx WHERE Body 
 -- Q83 task=recent filter=or,window freq=mid (connection/request/conversion, NO order by)
 SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs_idx WHERE Body @@ ts_any(['connection', 'request', 'conversion']) AND Timestamp BETWEEN TIMESTAMP '2025-09-23 00:00:00' AND TIMESTAMP '2025-09-23 00:30:00' LIMIT 100;
 
--- Joins: self-join on TraceId; TraceId <> '' drops the empty bucket.
+-- Joins: TraceId <> '' drops the empty bucket. Deduped before the join, not
+-- after: DISTINCT then EXISTS plans as HASH_GROUP_BY -> RIGHT_SEMI HASH_JOIN,
+-- where count(DISTINCT a.TraceId) over the inner join materialises every
+-- matching pair first.
 -- Q84 task=join filter=term freq=hi (frontend 'failed' traces that also involve payment)
-SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.ServiceName = 'frontend' AND a.Body @@ 'failed' AND b.ServiceName = 'payment';
+SELECT count(*) FROM (SELECT DISTINCT TraceId FROM otel_logs_idx WHERE TraceId <> '' AND ServiceName = 'frontend' AND Body @@ 'failed') a WHERE EXISTS (SELECT 1 FROM otel_logs_idx b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'payment');
 -- Q85 task=join filter=or freq=hi
-SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.Body @@ ts_any(['error', 'failed']) AND b.ServiceName = 'payment';
+SELECT count(*) FROM (SELECT DISTINCT TraceId FROM otel_logs_idx WHERE TraceId <> '' AND Body @@ ts_any(['error', 'failed'])) a WHERE EXISTS (SELECT 1 FROM otel_logs_idx b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'payment');
 -- Q86 task=join filter=phrase freq=mid
-SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.Body @@ ts_phrase('failed', 'to', 'place', 'order') AND b.ServiceName = 'payment';
+SELECT count(*) FROM (SELECT DISTINCT TraceId FROM otel_logs_idx WHERE TraceId <> '' AND Body @@ ts_phrase('failed', 'to', 'place', 'order')) a WHERE EXISTS (SELECT 1 FROM otel_logs_idx b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'payment');
 -- Q87 task=join filter=regexp freq=hi
-SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.Body @@ ts_regexp('charg.*') AND b.ServiceName = 'frontend';
+SELECT count(*) FROM (SELECT DISTINCT TraceId FROM otel_logs_idx WHERE TraceId <> '' AND Body @@ ts_regexp('charg.*')) a WHERE EXISTS (SELECT 1 FROM otel_logs_idx b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'frontend');
 -- Q88 task=join filter=and freq=hi (failed&order traces that also involve cart)
-SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.Body @@ ts_all(['failed', 'order']) AND b.ServiceName = 'cart';
+SELECT count(*) FROM (SELECT DISTINCT TraceId FROM otel_logs_idx WHERE TraceId <> '' AND Body @@ ts_all(['failed', 'order'])) a WHERE EXISTS (SELECT 1 FROM otel_logs_idx b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'cart');
 -- Q89 task=join filter=or freq=mid
-SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.Body @@ ts_any(['connection', 'request']) AND b.ServiceName = 'frontend';
+SELECT count(*) FROM (SELECT DISTINCT TraceId FROM otel_logs_idx WHERE TraceId <> '' AND Body @@ ts_any(['connection', 'request'])) a WHERE EXISTS (SELECT 1 FROM otel_logs_idx b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'frontend');
 -- Q90 task=join filter=and freq=hi
-SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.Body @@ ts_all(['charge', 'request']) AND b.ServiceName = 'frontend';
+SELECT count(*) FROM (SELECT DISTINCT TraceId FROM otel_logs_idx WHERE TraceId <> '' AND Body @@ ts_all(['charge', 'request'])) a WHERE EXISTS (SELECT 1 FROM otel_logs_idx b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'frontend');
 -- Q91 task=join filter=term freq=hi
-SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.Body @@ 'order' AND b.ServiceName = 'payment';
+SELECT count(*) FROM (SELECT DISTINCT TraceId FROM otel_logs_idx WHERE TraceId <> '' AND Body @@ 'order') a WHERE EXISTS (SELECT 1 FROM otel_logs_idx b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'payment');
 -- Q92 task=join filter=prefix freq=hi
-SELECT count(DISTINCT a.TraceId) FROM otel_logs_idx a JOIN otel_logs_idx b ON a.TraceId = b.TraceId WHERE a.TraceId <> '' AND a.Body @@ ts_starts_with('charg') AND b.ServiceName = 'frontend';
+SELECT count(*) FROM (SELECT DISTINCT TraceId FROM otel_logs_idx WHERE TraceId <> '' AND Body @@ ts_starts_with('charg')) a WHERE EXISTS (SELECT 1 FROM otel_logs_idx b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'frontend');
