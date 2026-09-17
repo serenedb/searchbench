@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Report bytes-on-disk attributable to the loaded dataset + its text index.
+# ClickHouse exposes this per active part in system.parts; bytes_on_disk is
+# the compressed footprint of data + secondary (text) indexes + marks/pk,
+# which is the analog of SereneDB's du-based total.
+set -euo pipefail
+
+: "${CLICKHOUSE_BIN:=./clickhouse}"
+: "${CH_HOST:=127.0.0.1}"
+: "${CH_TCP_PORT:=9000}"
+
+size=$("$CLICKHOUSE_BIN" client --host "$CH_HOST" --port "$CH_TCP_PORT" --query "
+    SELECT toUInt64(sum(bytes_on_disk))
+    FROM system.parts
+    WHERE active AND database = 'default' AND table = 'otel_logs'" 2>/dev/null || true)
+
+# sum() over zero rows yields an empty string / 0; normalise to a bare integer.
+[[ "$size" =~ ^[0-9]+$ ]] || size=0
+echo "$size"

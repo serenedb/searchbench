@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Readiness probe: exit 0 iff clickhouse-server answers a trivial query.
+set -euo pipefail
+: "${CLICKHOUSE_BIN:=./clickhouse}"
+: "${CH_HOST:=127.0.0.1}"
+: "${CH_TCP_PORT:=9000}"
+"$CLICKHOUSE_BIN" client --host "$CH_HOST" --port "$CH_TCP_PORT" \
+    --query 'SELECT 1' >/dev/null 2>&1

@@ -1,0 +1,33 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Result caching off for every connection, not just the driver's.
+                 use_query_cache is already 0 by default in this build; pinning
+                 it here means a future default flip cannot silently turn the
+                 benchmark into a cache lookup. Verified by A/B: one query
+                 repeated gives 0.036, 0.030, 0.030s while a textually different
+                 but equivalent query gives 0.035s, i.e. no collapse on repeat.
+                 Block caches (mark_cache, OS page cache) stay ON: every engine
+                 here has those, and disabling them would measure the disk
+                 rather than the engine. -->
+            <use_query_cache>0</use_query_cache>
+            <enable_reads_from_query_cache>0</enable_reads_from_query_cache>
+            <enable_writes_to_query_cache>0</enable_writes_to_query_cache>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>127.0.0.1</ip>
+                <ip>::1</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </default>
+    </users>
+    <quotas>
+        <default/>
+    </quotas>
+</clickhouse>

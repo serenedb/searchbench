@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Run a SQL query from stdin against clickhouse-server.
+#
+# Contract (per the SearchBench engine adapter):
+#   stdout: query result rows (no decoration)
+#   stderr: last line is the fractional elapsed-seconds reported by
+#           clickhouse-client's --time flag
+#   exit 0 on success, non-zero on any error.
+#
+# Sentinel: a query line beginning with `UNSUPPORTED:` is a placeholder for a
+# workload ClickHouse's text index can't express (the BM25 scored top-K
+# queries Q10-Q14). We emit a non-numeric note and exit 0, which the driver
+# records as a `null` timing -- keeping result rows aligned 1:1 with engines
+# that do run those queries.
+
+set -e
+
+: "${CLICKHOUSE_BIN:=./clickhouse}"
+: "${CH_HOST:=127.0.0.1}"
+: "${CH_TCP_PORT:=9000}"
+: "${CH_INDEX_SETTING:=enable_full_text_index=1}"
+
+query=$(cat)
+
+if [[ "$query" == UNSUPPORTED:* ]]; then
+    echo "skipping unsupported query: ${query#UNSUPPORTED:}" >&2
+    exit 0
+fi
+
+tmp_out=$(mktemp)
+tmp_err=$(mktemp)
+trap 'rm -f "$tmp_out" "$tmp_err"' EXIT
+
+if ! "$CLICKHOUSE_BIN" client --host "$CH_HOST" --port "$CH_TCP_PORT" \
+        "--$CH_INDEX_SETTING" --use_query_cache=0 --time --query "$query" \
+        >"$tmp_out" 2>"$tmp_err"; then
+    cat "$tmp_err" >&2
+    exit 1
+fi
+
+# Result rows on stdout (driver discards them; humans see them on a direct run).
+cat "$tmp_out"
+
+# --time prints the elapsed wall time (seconds) as the last line of stderr.
+elapsed=$(tail -n1 "$tmp_err" | tr -d '[:space:]')
+if [[ ! "$elapsed" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "could not parse --time output from clickhouse-client" >&2
+    cat "$tmp_err" >&2
+    exit 1
+fi
+printf '%s\n' "$elapsed" >&2

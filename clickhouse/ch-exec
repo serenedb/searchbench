@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# CH_BACKEND=docker shim. benchmark.sh sets CLICKHOUSE_BIN to this script, so
+# every adapter invocation -- `"$CLICKHOUSE_BIN" client --host 127.0.0.1 --port
+# 9000 ...`, including ./load's `... FORMAT Parquet" < part.parquet` -- runs the
+# clickhouse multi-tool INSIDE the server container against its own localhost.
+# `-i` forwards stdin so the host parquet streams in; stdout/stderr (incl. the
+# `--time` line ./query parses) pass straight back.
+# CH_EXEC_STDIN=1 opts into forwarding stdin -- only ./load needs it, to stream
+# the parquet in. Everything else must NOT get -i: check/start/data-size/version
+# run inside the driver's `while read ... done < queries.sql` loop and inherit
+# that file as stdin, and `docker exec -i` DRAINS it. That silently ended the
+# run after the first query at every scale where SEARCHBENCH_RESTART=yes (1b and
+# up, where cold_cycle calls ./check before each query); 100m was unaffected
+# because it does not restart between queries, which is why this survived a
+# passing 92/92 run at 100m and only surfaced at 1b.
+if [[ "${CH_EXEC_STDIN:-0}" == 1 ]]; then
+    exec docker exec -i "${CH_CONTAINER:-searchbench-clickhouse}" clickhouse "$@"
+fi
+exec docker exec "${CH_CONTAINER:-searchbench-clickhouse}" clickhouse "$@" < /dev/null
