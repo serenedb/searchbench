@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Wipe container so ./load rebuilds from scratch (a leftover table would give a
+# bogus instant load_time).
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${YDB_IMAGE:=ydbplatform/local-ydb:26.3.1.8}"
+: "${YDB_CONTAINER:=searchbench-ydb}"
+: "${YDB_DATA_DIR:=/mnt/data/mkornaukhov/data/ydb-data}"
+
+command -v docker >/dev/null || { echo "docker not on PATH" >&2; exit 1; }
+docker info >/dev/null 2>&1 || { echo "docker daemon not reachable" >&2; exit 1; }
+
+echo "YDB backend: docker ($YDB_IMAGE)"
+docker pull --quiet "$YDB_IMAGE" >/dev/null
+docker rm -f "$YDB_CONTAINER" >/dev/null 2>&1 || true
+
+# Wipe the mounted data dir too. /ydb_data is a host mount but /ydb_certs is not,
+# so a surviving deployment plus a fresh container means the init script skips
+# `local_ydb deploy`, never regenerates certs, and the server dies with
+# `File passed to --ca/ic-ca does not exist: /ydb_certs/ca.pem`. Wiping forces a
+# clean deploy, and also stops a leftover table giving a bogus instant load_time.
+if [[ -d "$YDB_DATA_DIR" ]]; then
+    docker run --rm -v "$(dirname "$YDB_DATA_DIR")":/w alpine \
+        rm -rf "/w/$(basename "$YDB_DATA_DIR")" >/dev/null 2>&1 || true
+fi
+mkdir -p "$YDB_DATA_DIR" 2>/dev/null || true
+chmod 777 "$YDB_DATA_DIR" 2>/dev/null || true

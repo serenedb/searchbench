@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Run YQL from stdin against YDB.
+# Contract: stdout=tuple-only rows; stderr has SEARCHBENCH_ROWS=<n> and, as its
+# last line, fractional elapsed seconds.
+#
+# Uses the repo venv if present: the ydb SDK is installed there, not in system
+# python, and the driver invokes ./query with a bare environment.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+py="${here}/../.venv/bin/python3"
+[[ -x "$py" ]] || py="$(command -v python3)"
+exec "$py" "${here}/_query.py"
