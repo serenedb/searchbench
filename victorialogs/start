@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Launch VictoriaLogs container; idempotent via ./check
+set -euo pipefail
+cd "$(dirname "$0")"
+
+: "${VL_PORT:=9428}"
+: "${VL_DATA_DIR:=${PWD}/vl-data}"
+: "${VL_IMAGE:=victoriametrics/victoria-logs:v1.52.0}"
+: "${VL_CONTAINER:=searchbench-vl}"
+# The corpus is timestamped 2025-09-23. VictoriaLogs DROPS entries older than
+# -retentionPeriod (default 7d) at ingest time -- silently, apart from a warn
+# line, with the count in vl_rows_dropped_total{reason="too_small_timestamp"}.
+# Loading the corpus with the default retention ingests 0 rows. 10y covers any
+# corpus vintage; retention is an operational knob, not a query/index tunable,
+# so widening it does not flatter the engine.
+: "${VL_RETENTION:=10y}"
+# VictoriaLogs aborts a query server-side at -search.maxQueryDuration (default
+# 30s) with HTTP 503. The harness caps every engine client-side at
+# SEARCHBENCH_QUERY_TIMEOUT (default 60s) and no other adapter sets a server-side
+# limit, so leaving the default gives VictoriaLogs HALF the allowance the others
+# get: at 1B, Q19 died at 30.0s as a 503 rather than running to the 60s cap.
+# Tracking the harness cap does not make any query faster -- a query that still
+# exceeds it is recorded as a timeout like anywhere else.
+: "${VL_MAX_QUERY_DURATION:=${SEARCHBENCH_QUERY_TIMEOUT:-60}s}"
+
+mkdir -p "$VL_DATA_DIR"
+chmod a+rwX "$VL_DATA_DIR" 2>/dev/null || true
+
+# Recreate when the image, the storage mount or the server flags differ from what
+# this invocation asks for -- `docker start` below reuses the container as-built,
+# so otherwise a changed VL_DATA_DIR, retention or query-duration silently has no
+# effect and the run reads the OLD storage with the OLD limits.
+if docker inspect "$VL_CONTAINER" >/dev/null 2>&1; then
+    _have="$(docker inspect -f '{{.Config.Image}}|{{range .Mounts}}{{if eq .Destination "/vl-data"}}{{.Source}}{{end}}{{end}}|{{range .Config.Cmd}}{{.}} {{end}}' "$VL_CONTAINER" 2>/dev/null)"
+    _have_img="${_have%%|*}"; _rest="${_have#*|}"; _have_src="${_rest%%|*}"; _have_cmd="${_rest#*|}"
+    if [[ "$_have_img" != "$VL_IMAGE" || "$_have_src" != "$VL_DATA_DIR" \
+          || "$_have_cmd" != *"-retentionPeriod=${VL_RETENTION}"* \
+          || "$_have_cmd" != *"-search.maxQueryDuration=${VL_MAX_QUERY_DURATION}"* \
+          || "$_have_cmd" != *"-httpListenAddr=:${VL_PORT}"* ]]; then
+        echo "container differs from requested config; recreating"
+        docker rm -f "$VL_CONTAINER" >/dev/null
+    fi
+fi
+
+# Only now is "already running" the same thing as "running what was asked for".
+# This check must stay AFTER the staleness comparison above: a running container
+# with stale flags would otherwise short-circuit the recreate and serve the run
+# with the old configuration.
+if ./check >/dev/null 2>&1; then
+    echo "VictoriaLogs already up on :${VL_PORT}"
+    exit 0
+fi
+
+if docker inspect "$VL_CONTAINER" >/dev/null 2>&1; then
+    docker start "$VL_CONTAINER" >/dev/null
+else
+    # --network host to match the ES/OS adapters: no NAT in the timing path.
+    docker run -d \
+        --name "$VL_CONTAINER" \
+        --network host \
+        -v "${VL_DATA_DIR}:/vl-data" \
+        "$VL_IMAGE" \
+        -storageDataPath=/vl-data \
+        -httpListenAddr=":${VL_PORT}" \
+        -retentionPeriod="${VL_RETENTION}" \
+        -search.maxQueryDuration="${VL_MAX_QUERY_DURATION}" >/dev/null
+fi
+
+for _ in $(seq 1 180); do
+    if ./check >/dev/null 2>&1; then
+        echo "VictoriaLogs up on :${VL_PORT} (backend=docker)"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "VictoriaLogs did not become healthy within 180s." >&2
+docker logs --tail 50 "$VL_CONTAINER" 2>&1 >&2 || true
+exit 1

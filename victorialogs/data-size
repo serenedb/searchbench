@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# On-disk bytes of everything this engine stores to serve the workload.
+#
+# VictoriaLogs reports its own footprint as two gauges: type="storage" (the log
+# data) and type="indexdb" (the inverted index over it). Summing both is the
+# direct analogue of Elasticsearch's _cat/indices store.size -- data + index,
+# which is what the adapter contract asks for. There is no separate helper
+# structure here (no equivalent of the ES trace_lookup index), because the join
+# queries are not expressible in LogsQL at all.
+set -euo pipefail
+: "${VL_PORT:=9428}"
+curl -fsS "http://127.0.0.1:${VL_PORT}/metrics" \
+  | awk '/^vl_data_size_bytes\{/ { s += $2 } END { printf "%d\n", s+0 }'

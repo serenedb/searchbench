@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Exit 0 when VictoriaLogs answers on $VL_PORT; non-zero otherwise.
+set -euo pipefail
+: "${VL_PORT:=9428}"
+[[ "$(curl -fsS --max-time 3 "http://127.0.0.1:${VL_PORT}/health" 2>/dev/null)" == "OK" ]]

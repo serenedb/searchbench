@@ -1,0 +1,11 @@
+{
+  "engine": "VictoriaLogs",
+  "dataset": "otel_logs_1b",
+  "build": "",
+  "engine_version": "1.52.0",
+  "load_time": 5565.192,
+  "data_size": 53869102743,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-09-18",
+  "loaded_by": "queries.logsql"
+}
