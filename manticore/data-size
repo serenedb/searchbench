@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+. ./_backend.sh
+
+# Manticore lays each RT table out as a directory of files (.meta, .ram, disk
+# chunks .spi/.spm/.spa/...) under /var/lib/manticore/<table>/. We load two
+# tables (otel_logs + otel_traces), so sum the whole data dir. du in the image
+# is busybox (no -b); awk-multiply the kB output (1024) to bytes.
+docker exec "$MANTICORE_CONTAINER" sh -c \
+  "du -sk /var/lib/manticore 2>/dev/null | awk '{print \$1*1024}'"

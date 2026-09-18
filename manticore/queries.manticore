@@ -1,0 +1,188 @@
+-- Manticore tagged query workload over the single otel_logs table.
+-- One runnable SQL statement per line; preceding `-- Qnn task=...` comment carries tags.
+-- Joins (Q84-Q92) are UNSUPPORTED: Manticore has no same-table self-join.
+
+-- Q01 task=count filter=term freq=hi
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body error')
+-- Q02 task=count filter=term freq=lo
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body payment')
+-- Q03 task=count filter=and freq=hi (AND, 2 tokens)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body failed order')
+-- Q04 task=count filter=and freq=hi (AND, 4 tokens)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body failed charge card cache')
+-- Q05 task=count filter=and freq=lo (AND, 8 tokens)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body failed send order confirmation email service expected post')
+-- Q06 task=count filter=or freq=hi (OR, 2 tokens)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body error | failed')
+-- Q07 task=count filter=or freq=hi (OR, 4 tokens)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body connection | request | conversion | post')
+-- Q08 task=count filter=or freq=mid (OR, 8 tokens)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body payment | exception | refused | send | confirmation | email | expected | deadline')
+-- Q09 task=count filter=or,minmatch freq=hi (>=2 of 4)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body "error failed charge cache"/2')
+-- Q10 task=count filter=phrase freq=mid (phrase, 2 tokens)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body "place order"')
+-- Q11 task=count filter=phrase freq=mid (phrase, 4 tokens)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body "failed to place order"')
+-- Q12 task=count filter=phrase freq=lo (phrase, 8 tokens)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body "post to email service expected 200 got 500"')
+-- Q13 task=count filter=phrase,proximity freq=hi (failed within 2 of order)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body "failed order"~3')
+-- Q14 task=count filter=phrase,or freq=hi (phrase OR term)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body "failed to place order" | charge')
+-- Q15 task=count filter=phrase,and freq=mid (phrase AND term)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body "failed to place order" charge')
+-- Q16 task=count filter=regexp freq=hi (charg.*)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body REGEX(/charg.*/)')
+-- Q17 task=count filter=regexp freq=hi (ord.*)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body REGEX(/ord.*/)')
+-- Q18 task=count filter=regexp freq=mid (conn.*)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body REGEX(/conn.*/)')
+-- Q19 task=count filter=regexp freq=hi (single-char wildcard mid: c.che -> cache)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body REGEX(/c.che/)')
+-- Q20 task=count filter=prefix freq=mid (conn)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body conn*')
+-- Q21 task=count filter=prefix freq=hi (charg)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body charg*')
+-- Q22 task=count filter=fuzzy freq=mid (levenshtein distance 1)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('connection') OPTION fuzzy=1, distance=1
+-- Q23 task=count filter=fuzzy freq=mid (levenshtein distance 2)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('connection') OPTION fuzzy=1, distance=2
+-- Q24 task=count filter=fuzzy,prefix freq=mid (levenshtein-2 AND prefix, same 'conn' root)
+UNSUPPORTED: Q24 fuzzy+prefix -- Manticore fuzzy is a query-level OPTION (fuzzes all terms); cannot combine fuzzy(connection,2) AND prefix(conn*) in one MATCH
+-- Q25 task=count filter=like freq=mid (prefix wildcard conn%)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body conn*')
+-- Q26 task=count filter=like freq=hi (suffix wildcard %tion)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body *tion')
+-- Q27 task=count filter=like freq=mid (middle wildcard %nnec%)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body *nnec*')
+-- Q28 task=count filter=and,negation freq=hi (error but NOT cache)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body error -cache')
+-- Q29 task=count filter=or,negation freq=hi (error/failed, excluding charge)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body (error | failed) -charge')
+-- Q30 task=count filter=term,window freq=hi (term + Timestamp BETWEEN 6h)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body error') AND ts BETWEEN 1758585600000 AND 1758607200000
+-- Q31 task=count filter=and,window freq=hi (term + service + Timestamp BETWEEN 6h)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body failed') AND servicename='frontend' AND ts BETWEEN 1758585600000 AND 1758607200000
+-- Q32 task=count filter=or,window freq=mid (8-token OR within a BETWEEN 6h window)
+SELECT COUNT(*) FROM otel_logs WHERE MATCH('@body payment | exception | refused | send | confirmation | email | expected | deadline') AND ts BETWEEN 1758585600000 AND 1758607200000
+-- Q33 task=top_k filter=term freq=hi
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body charge') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q34 task=top_k filter=term freq=mid
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body connection') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q35 task=top_k filter=term freq=lo
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body payment') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q36 task=top_k filter=and freq=hi (AND, 2 tokens)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body failed order') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q37 task=top_k filter=and freq=hi (AND, 4 tokens)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body failed charge card cache') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q38 task=top_k filter=and freq=lo (AND, 8 tokens)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body failed send order confirmation email service expected post') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q39 task=top_k filter=or freq=hi (OR, 2 tokens)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body error | failed') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q40 task=top_k filter=or freq=hi (OR, 4 tokens)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body connection | request | conversion | post') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q41 task=top_k filter=or freq=mid (OR, 8 tokens)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body payment | exception | refused | send | confirmation | email | expected | deadline') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q42 task=top_k filter=or,minmatch freq=hi (>=2 of 4)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body "error failed charge cache"/2') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q43 task=top_k filter=phrase freq=mid (phrase, 2 tokens)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body "place order"') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q44 task=top_k filter=phrase freq=mid (phrase, 4 tokens)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body "failed to place order"') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q45 task=top_k filter=phrase freq=lo (phrase, 8 tokens)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body "post to email service expected 200 got 500"') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q46 task=top_k filter=regexp freq=mid (conn.*)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body REGEX(/conn.*/)') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q47 task=top_k filter=prefix freq=hi (charg)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body charg*') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q48 task=top_k filter=fuzzy freq=mid (levenshtein distance 1)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('connection') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25, fuzzy=1, distance=1
+-- Q49 task=top_k filter=fuzzy freq=mid (levenshtein distance 2)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('connection') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25, fuzzy=1, distance=2
+-- Q50 task=top_k filter=like freq=mid (prefix wildcard conn%)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body conn*') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q51 task=top_k filter=phrase,or freq=hi (phrase OR term)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body "failed to place order" | charge') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q52 task=top_k filter=and,negation freq=hi (error but NOT cache)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body error -cache') ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q53 task=top_k filter=and,window freq=hi (term + service + Timestamp BETWEEN 6h)
+SELECT ts, servicename, body, WEIGHT() AS score FROM otel_logs WHERE MATCH('@body charge') AND servicename='payment' AND ts BETWEEN 1758585600000 AND 1758607200000 ORDER BY WEIGHT() DESC LIMIT 100 OPTION ranker=bm25
+-- Q54 task=group_by filter=or freq=hi (key=SeverityText, ordered)
+SELECT severitytext AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body error | failed') GROUP BY gk ORDER BY cnt DESC
+-- Q55 task=group_by filter=term freq=hi (key=SeverityText, ordered)
+SELECT severitytext AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body charge') GROUP BY gk ORDER BY cnt DESC
+-- Q56 task=group_by filter=and freq=hi (key=SeverityText, NO order by)
+SELECT severitytext AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body failed order') GROUP BY gk
+-- Q57 task=group_by filter=or freq=hi (key=ScopeName, top 20 ordered)
+SELECT scopename AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body error | failed') GROUP BY gk ORDER BY cnt DESC LIMIT 20
+-- Q58 task=group_by filter=regexp freq=hi (key=ScopeName)
+SELECT scopename AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body REGEX(/charg.*/)') GROUP BY gk ORDER BY cnt DESC LIMIT 20
+-- Q59 task=group_by filter=fuzzy freq=mid (key=ScopeName)
+SELECT scopename AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('connection') GROUP BY gk ORDER BY cnt DESC LIMIT 20 OPTION fuzzy=1, distance=1
+-- Q60 task=group_by filter=or freq=hi (key=ScopeName, NO order by)
+SELECT scopename AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body error | failed') GROUP BY gk
+-- Q61 task=group_by filter=term freq=hi (key=minute)
+SELECT (ts DIV 60000)*60000 AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body error') GROUP BY gk ORDER BY gk ASC
+-- Q62 task=group_by filter=and freq=hi (key=minute)
+SELECT (ts DIV 60000)*60000 AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body failed order') GROUP BY gk ORDER BY gk ASC
+-- Q63 task=group_by filter=phrase freq=mid (key=minute)
+SELECT (ts DIV 60000)*60000 AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body "failed to place order"') GROUP BY gk ORDER BY gk ASC
+-- Q64 task=group_by filter=or freq=hi (key=minute)
+SELECT (ts DIV 60000)*60000 AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body error | failed | charge') GROUP BY gk ORDER BY gk ASC
+-- Q65 task=group_by filter=term freq=hi (key=minute, NO order by)
+SELECT (ts DIV 60000)*60000 AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body error') GROUP BY gk
+-- Q66 task=group_by filter=and freq=hi (key=SeverityText, Body term + indexed service)
+SELECT severitytext AS gk, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body failed') AND servicename='frontend' GROUP BY gk ORDER BY cnt DESC
+-- Q67 task=group_by filter=or freq=hi (two keys: SeverityText, ScopeName)
+SELECT severitytext, scopename, COUNT(*) AS cnt FROM otel_logs WHERE MATCH('@body error | failed') GROUP BY severitytext, scopename ORDER BY cnt DESC LIMIT 20
+-- Q68 task=recent filter=and,window freq=hi (recent failed-order logs from checkout)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body failed order') AND servicename='checkout' AND ts BETWEEN 1758585600000 AND 1758587400000 ORDER BY ts DESC LIMIT 100
+-- Q69 task=recent filter=or,window freq=hi (recent error/failed/charge, severity>=warn)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body error | failed | charge') AND severitynumber >= 13 AND ts BETWEEN 1758585600000 AND 1758587400000 ORDER BY ts DESC LIMIT 100
+-- Q70 task=recent filter=term,window freq=hi (recent error logs in a 6h window)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body error') AND ts BETWEEN 1758585600000 AND 1758607200000 ORDER BY ts DESC LIMIT 100
+-- Q71 task=recent filter=phrase,window freq=mid (recent 'failed to place order')
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body "failed to place order"') AND ts BETWEEN 1758585600000 AND 1758607200000 ORDER BY ts DESC LIMIT 100
+-- Q72 task=recent filter=and,window freq=hi (recent payment charges)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body charge') AND servicename='payment' AND ts BETWEEN 1758585600000 AND 1758587400000 ORDER BY ts DESC LIMIT 100
+-- Q73 task=recent filter=window (pure time-series tail: recent cart logs, no text search)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE servicename='cart' AND ts BETWEEN 1758585600000 AND 1758587400000 ORDER BY ts DESC LIMIT 100
+-- Q74 task=recent filter=regexp,window freq=hi (recent charg* logs in a 6h window)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body REGEX(/charg.*/)') AND ts BETWEEN 1758585600000 AND 1758607200000 ORDER BY ts DESC LIMIT 100
+-- Q75 task=recent filter=or,window freq=mid (recent connection/request/conversion logs)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body connection | request | conversion') AND ts BETWEEN 1758585600000 AND 1758587400000 ORDER BY ts DESC LIMIT 100
+-- Q76 task=recent filter=and,window freq=hi (checkout failed&order, NO order by)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body failed order') AND servicename='checkout' AND ts BETWEEN 1758585600000 AND 1758587400000 LIMIT 100
+-- Q77 task=recent filter=or,window freq=hi (error/failed/charge sev>=warn, NO order by)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body error | failed | charge') AND severitynumber >= 13 AND ts BETWEEN 1758585600000 AND 1758587400000 LIMIT 100
+-- Q78 task=recent filter=term,window freq=hi (error 6h, NO order by)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body error') AND ts BETWEEN 1758585600000 AND 1758607200000 LIMIT 100
+-- Q79 task=recent filter=phrase,window freq=mid (failed to place order 6h, NO order by)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body "failed to place order"') AND ts BETWEEN 1758585600000 AND 1758607200000 LIMIT 100
+-- Q80 task=recent filter=and,window freq=hi (payment charges, NO order by)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body charge') AND servicename='payment' AND ts BETWEEN 1758585600000 AND 1758587400000 LIMIT 100
+-- Q81 task=recent filter=window (cart tail, NO order by, no text search)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE servicename='cart' AND ts BETWEEN 1758585600000 AND 1758587400000 LIMIT 100
+-- Q82 task=recent filter=regexp,window freq=hi (charg.* 6h, NO order by)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body REGEX(/charg.*/)') AND ts BETWEEN 1758585600000 AND 1758607200000 LIMIT 100
+-- Q83 task=recent filter=or,window freq=mid (connection/request/conversion, NO order by)
+SELECT ts, servicename, severitytext, body FROM otel_logs WHERE MATCH('@body connection | request | conversion') AND ts BETWEEN 1758585600000 AND 1758587400000 LIMIT 100
+-- Q84 task=join filter=term freq=hi (frontend 'failed' traces that also involve payment)
+UNSUPPORTED: join -- Manticore has no same-table self-join; the count(DISTINCT TraceId) self-join is not expressible over one table
+-- Q85 task=join filter=or freq=hi
+UNSUPPORTED: join -- Manticore has no same-table self-join; the count(DISTINCT TraceId) self-join is not expressible over one table
+-- Q86 task=join filter=phrase freq=mid
+UNSUPPORTED: join -- Manticore has no same-table self-join; the count(DISTINCT TraceId) self-join is not expressible over one table
+-- Q87 task=join filter=regexp freq=hi
+UNSUPPORTED: join -- Manticore has no same-table self-join; the count(DISTINCT TraceId) self-join is not expressible over one table
+-- Q88 task=join filter=and freq=hi (failed&order traces that also involve cart)
+UNSUPPORTED: join -- Manticore has no same-table self-join; the count(DISTINCT TraceId) self-join is not expressible over one table
+-- Q89 task=join filter=or freq=mid
+UNSUPPORTED: join -- Manticore has no same-table self-join; the count(DISTINCT TraceId) self-join is not expressible over one table
+-- Q90 task=join filter=and freq=hi
+UNSUPPORTED: join -- Manticore has no same-table self-join; the count(DISTINCT TraceId) self-join is not expressible over one table
+-- Q91 task=join filter=term freq=hi
+UNSUPPORTED: join -- Manticore has no same-table self-join; the count(DISTINCT TraceId) self-join is not expressible over one table
+-- Q92 task=join filter=prefix freq=hi
+UNSUPPORTED: join -- Manticore has no same-table self-join; the count(DISTINCT TraceId) self-join is not expressible over one table
