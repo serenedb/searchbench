@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Run one Typesense query; timing on stderr.
+#
+# stdin = one JSON object of search parameters. stdout = result rows. stderr last
+# line = curl %{time_total} secs.
+#
+# Response shapes flattened to rows:
+#   * count     -> per_page=0, so hits is empty and `found` is the answer
+#   * group_by  -> facet_counts[].counts[] ({value,count})
+#   * hits      -> hit documents
+set -euo pipefail
+: "${TS_PORT:=8108}"; : "${TS_KEY:=searchbench}"; : "${TS_COLLECTION:=otel_logs}"
+T="http://127.0.0.1:${TS_PORT}"
+
+q=$(cat)
+if [[ "$q" == UNSUPPORTED:* ]]; then echo "${q#UNSUPPORTED: }" >&2; exit 3; fi
+
+# The search endpoint takes query-string params; build it from the JSON body.
+qs=$(printf '%s' "$q" | python3 -c '
+import sys, json, urllib.parse
+print(urllib.parse.urlencode(json.load(sys.stdin)))')
+
+resp=$(curl -fsS -w '\n%{time_total}' -H "X-TYPESENSE-API-KEY: ${TS_KEY}" \
+    "$T/collections/${TS_COLLECTION}/documents/search?${qs}")
+rt=$(printf '%s\n' "$resp" | tail -n1)
+payload=$(printf '%s\n' "$resp" | sed '$d')
+
+printf '%s' "$payload" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if "message" in d and "found" not in d:
+    print(d["message"], file=sys.stderr); sys.exit(1)
+fc = d.get("facet_counts") or []
+if fc:
+    for f in fc:
+        for c in f.get("counts", []):
+            print(json.dumps({"key": c.get("value"), "doc_count": c.get("count")}))
+elif d.get("hits"):
+    for h in d["hits"]:
+        print(json.dumps(h.get("document", h)))
+else:
+    print(d.get("found", 0))
+'
+printf '%s\n' "$rt" >&2
