@@ -77,8 +77,18 @@ def parse_group_line(line):
             o = json.loads(s)
         except ValueError:
             return None
-        cnt = o.get("doc_count", o.get("count"))
-        return (str(o.get("key", o.get("val", ""))), int(cnt)) if cnt is not None else None
+        # count field: ES/OS 'doc_count', SQL-ish 'count', VictoriaLogs 'cnt'
+        cnt = next((o[k] for k in ("doc_count", "count", "cnt") if k in o), None)
+        if cnt is None:
+            return None
+        if "key" in o or "val" in o:
+            return (str(o.get("key", o.get("val", ""))), int(cnt))
+        # VictoriaLogs shape {"cnt":"N","SeverityText":"error",...}: no 'key'
+        # field at all -- every non-count field is a grouping key, in emission
+        # order. Without this the row parses as key "" and a whole group_by
+        # result collapses to one entry, showing as a bogus empty-vs-full DIFF.
+        return ("|".join(str(v) for k, v in o.items()
+                         if k not in ("doc_count", "count", "cnt")), int(cnt))
     if s[0] == "[":
         try:
             a = json.loads(s)
