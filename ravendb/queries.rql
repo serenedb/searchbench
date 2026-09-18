@@ -1,0 +1,189 @@
+-- RavenDB RQL workload over the OTel-logs corpus -- 92 queries mirroring
+-- serenedb/queries.sql Q01-Q92 one-for-one. Generated from
+-- elastic/queries.dsl by ravendb/translate.py; see that file for the
+-- semantics (search/regex behaviour, facets, what is unsupported).
+
+-- Q01 task=count filter=term freq=hi
+from index 'Logs/Search' where search(Body, 'error') limit 0
+-- Q02 task=count filter=term freq=lo
+from index 'Logs/Search' where search(Body, 'payment') limit 0
+-- Q03 task=count filter=and freq=hi (AND, 2 tokens)
+from index 'Logs/Search' where search(Body, 'failed order', and) limit 0
+-- Q04 task=count filter=and freq=hi (AND, 4 tokens)
+from index 'Logs/Search' where search(Body, 'failed charge card cache', and) limit 0
+-- Q05 task=count filter=and freq=lo (AND, 8 tokens)
+from index 'Logs/Search' where search(Body, 'failed send order confirmation email service expected post', and) limit 0
+-- Q06 task=count filter=or freq=hi (OR, 2 tokens)
+from index 'Logs/Search' where search(Body, 'error failed') limit 0
+-- Q07 task=count filter=or freq=hi (OR, 4 tokens)
+from index 'Logs/Search' where search(Body, 'connection request conversion post') limit 0
+-- Q08 task=count filter=or freq=mid (OR, 8 tokens)
+from index 'Logs/Search' where search(Body, 'payment exception refused send confirmation email expected deadline') limit 0
+-- Q09 task=count filter=or,minmatch freq=hi (>=2 of 4)
+from index 'Logs/Search' where ((search(Body, 'error') and search(Body, 'failed')) or (search(Body, 'error') and search(Body, 'charge')) or (search(Body, 'error') and search(Body, 'cache')) or (search(Body, 'failed') and search(Body, 'charge')) or (search(Body, 'failed') and search(Body, 'cache')) or (search(Body, 'charge') and search(Body, 'cache'))) limit 0
+-- Q10 task=count filter=phrase freq=mid (phrase, 2 tokens)
+from index 'Logs/Search' where search(Body, '"place order"') limit 0
+-- Q11 task=count filter=phrase freq=mid (phrase, 4 tokens)
+from index 'Logs/Search' where search(Body, '"failed to place order"') limit 0
+-- Q12 task=count filter=phrase freq=lo (phrase, 8 tokens)
+from index 'Logs/Search' where search(Body, '"post to email service expected 200 got 500"') limit 0
+-- Q13 task=count filter=phrase,proximity freq=hi (failed within 2 of order)
+UNSUPPORTED: match_phrase with slop: RQL has no proximity operator
+-- Q14 task=count filter=phrase,or freq=hi (phrase OR term)
+from index 'Logs/Search' where (search(Body, '"failed to place order"') or search(Body, 'charge')) limit 0
+-- Q15 task=count filter=phrase,and freq=mid (phrase AND term)
+from index 'Logs/Search' where search(Body, '"failed to place order"') and search(Body, 'charge') limit 0
+-- Q16 task=count filter=regexp freq=hi (charg.*)
+from index 'Logs/Search' where search(Body, 'charg*') limit 0
+-- Q17 task=count filter=regexp freq=hi (ord.*)
+from index 'Logs/Search' where search(Body, 'ord*') limit 0
+-- Q18 task=count filter=regexp freq=mid (conn.*)
+from index 'Logs/Search' where search(Body, 'conn*') limit 0
+-- Q19 task=count filter=regexp freq=hi (single-char wildcard mid: c.che -> cache)
+from index 'Logs/Search' where regex(Body, '(^|[^a-z0-9])c.che([^a-z0-9]|$)') limit 0
+-- Q20 task=count filter=prefix freq=mid (conn)
+from index 'Logs/Search' where search(Body, 'conn*') limit 0
+-- Q21 task=count filter=prefix freq=hi (charg)
+from index 'Logs/Search' where search(Body, 'charg*') limit 0
+-- Q22 task=count filter=fuzzy freq=mid (levenshtein distance 1)
+UNSUPPORTED: fuzzy: Corax reports "Method 'Fuzzy' is not supported"
+-- Q23 task=count filter=fuzzy freq=mid (levenshtein distance 2)
+UNSUPPORTED: fuzzy: Corax reports "Method 'Fuzzy' is not supported"
+-- Q24 task=count filter=fuzzy,prefix freq=mid (levenshtein-2 AND prefix, same 'conn' root)
+UNSUPPORTED: fuzzy: Corax reports "Method 'Fuzzy' is not supported"
+-- Q25 task=count filter=like freq=mid (prefix wildcard conn%)
+from index 'Logs/Search' where search(Body, 'conn*') limit 0
+-- Q26 task=count filter=like freq=hi (suffix wildcard %tion)
+from index 'Logs/Search' where regex(Body, 'tion([^a-z0-9]|$)') limit 0
+-- Q27 task=count filter=like freq=mid (middle wildcard %nnec%)
+from index 'Logs/Search' where regex(Body, 'nnec') limit 0
+-- Q28 task=count filter=and,negation freq=hi (error but NOT cache)
+from index 'Logs/Search' where search(Body, 'error') and not (search(Body, 'cache')) limit 0
+-- Q29 task=count filter=or,negation freq=hi (error/failed, excluding charge)
+from index 'Logs/Search' where search(Body, 'error failed') and not (search(Body, 'charge')) limit 0
+-- Q30 task=count filter=term,window freq=hi (term + Timestamp BETWEEN 6h)
+from index 'Logs/Search' where search(Body, 'error') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' limit 0
+-- Q31 task=count filter=and,window freq=hi (term + service + Timestamp BETWEEN 6h)
+from index 'Logs/Search' where search(Body, 'failed') and ServiceName = 'frontend' and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' limit 0
+-- Q32 task=count filter=or,window freq=mid (8-token OR within a BETWEEN 6h window)
+from index 'Logs/Search' where search(Body, 'payment exception refused send confirmation email expected deadline') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' limit 0
+-- Q33 task=top_k filter=term freq=hi
+from index 'Logs/Search' where search(Body, 'charge') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q34 task=top_k filter=term freq=mid
+from index 'Logs/Search' where search(Body, 'connection') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q35 task=top_k filter=term freq=lo
+from index 'Logs/Search' where search(Body, 'payment') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q36 task=top_k filter=and freq=hi (AND, 2 tokens)
+from index 'Logs/Search' where search(Body, 'failed order', and) order by score() select Timestamp, ServiceName, Body limit 100
+-- Q37 task=top_k filter=and freq=hi (AND, 4 tokens)
+from index 'Logs/Search' where search(Body, 'failed charge card cache', and) order by score() select Timestamp, ServiceName, Body limit 100
+-- Q38 task=top_k filter=and freq=lo (AND, 8 tokens)
+from index 'Logs/Search' where search(Body, 'failed send order confirmation email service expected post', and) order by score() select Timestamp, ServiceName, Body limit 100
+-- Q39 task=top_k filter=or freq=hi (OR, 2 tokens)
+from index 'Logs/Search' where search(Body, 'error failed') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q40 task=top_k filter=or freq=hi (OR, 4 tokens)
+from index 'Logs/Search' where search(Body, 'connection request conversion post') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q41 task=top_k filter=or freq=mid (OR, 8 tokens)
+from index 'Logs/Search' where search(Body, 'payment exception refused send confirmation email expected deadline') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q42 task=top_k filter=or,minmatch freq=hi (>=2 of 4)
+from index 'Logs/Search' where ((search(Body, 'error') and search(Body, 'failed')) or (search(Body, 'error') and search(Body, 'charge')) or (search(Body, 'error') and search(Body, 'cache')) or (search(Body, 'failed') and search(Body, 'charge')) or (search(Body, 'failed') and search(Body, 'cache')) or (search(Body, 'charge') and search(Body, 'cache'))) order by score() select Timestamp, ServiceName, Body limit 100
+-- Q43 task=top_k filter=phrase freq=mid (phrase, 2 tokens)
+from index 'Logs/Search' where search(Body, '"place order"') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q44 task=top_k filter=phrase freq=mid (phrase, 4 tokens)
+from index 'Logs/Search' where search(Body, '"failed to place order"') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q45 task=top_k filter=phrase freq=lo (phrase, 8 tokens)
+from index 'Logs/Search' where search(Body, '"post to email service expected 200 got 500"') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q46 task=top_k filter=regexp freq=mid (conn.*)
+from index 'Logs/Search' where search(Body, 'conn*') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q47 task=top_k filter=prefix freq=hi (charg)
+from index 'Logs/Search' where search(Body, 'charg*') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q48 task=top_k filter=fuzzy freq=mid (levenshtein distance 1)
+UNSUPPORTED: fuzzy: Corax reports "Method 'Fuzzy' is not supported"
+-- Q49 task=top_k filter=fuzzy freq=mid (levenshtein distance 2)
+UNSUPPORTED: fuzzy: Corax reports "Method 'Fuzzy' is not supported"
+-- Q50 task=top_k filter=like freq=mid (prefix wildcard conn%)
+from index 'Logs/Search' where search(Body, 'conn*') order by score() select Timestamp, ServiceName, Body limit 100
+-- Q51 task=top_k filter=phrase,or freq=hi (phrase OR term)
+from index 'Logs/Search' where (search(Body, '"failed to place order"') or search(Body, 'charge')) order by score() select Timestamp, ServiceName, Body limit 100
+-- Q52 task=top_k filter=and,negation freq=hi (error but NOT cache)
+from index 'Logs/Search' where search(Body, 'error') and not (search(Body, 'cache')) order by score() select Timestamp, ServiceName, Body limit 100
+-- Q53 task=top_k filter=and,window freq=hi (term + service + Timestamp BETWEEN 6h)
+from index 'Logs/Search' where search(Body, 'charge') and ServiceName = 'payment' and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' order by score() select Timestamp, ServiceName, Body limit 100
+-- Q54 task=group_by filter=or freq=hi (key=SeverityText, ordered)
+from index 'Logs/Search' where search(Body, 'error failed') select facet(SeverityText)
+-- Q55 task=group_by filter=term freq=hi (key=SeverityText, ordered)
+from index 'Logs/Search' where search(Body, 'charge') select facet(SeverityText)
+-- Q56 task=group_by filter=and freq=hi (key=SeverityText, NO order by)
+from index 'Logs/Search' where search(Body, 'failed order', and) select facet(SeverityText)
+-- Q57 task=group_by filter=or freq=hi (key=ScopeName, top 20 ordered)
+from index 'Logs/Search' where search(Body, 'error failed') select facet(ScopeName)
+-- Q58 task=group_by filter=regexp freq=hi (key=ScopeName)
+from index 'Logs/Search' where search(Body, 'charg*') select facet(ScopeName)
+-- Q59 task=group_by filter=fuzzy freq=mid (key=ScopeName)
+UNSUPPORTED: fuzzy: Corax reports "Method 'Fuzzy' is not supported"
+-- Q60 task=group_by filter=or freq=hi (key=ScopeName, NO order by)
+from index 'Logs/Search' where search(Body, 'error failed') select facet(ScopeName)
+-- Q61 task=group_by filter=term freq=hi (key=minute)
+UNSUPPORTED: date_histogram: RQL facets bucket by explicit ranges, not by calendar interval
+-- Q62 task=group_by filter=and freq=hi (key=minute)
+UNSUPPORTED: date_histogram: RQL facets bucket by explicit ranges, not by calendar interval
+-- Q63 task=group_by filter=phrase freq=mid (key=minute)
+UNSUPPORTED: date_histogram: RQL facets bucket by explicit ranges, not by calendar interval
+-- Q64 task=group_by filter=or freq=hi (key=minute)
+UNSUPPORTED: date_histogram: RQL facets bucket by explicit ranges, not by calendar interval
+-- Q65 task=group_by filter=term freq=hi (key=minute, NO order by)
+UNSUPPORTED: date_histogram: RQL facets bucket by explicit ranges, not by calendar interval
+-- Q66 task=group_by filter=and freq=hi (key=SeverityText, Body term + indexed service)
+from index 'Logs/Search' where search(Body, 'failed') and ServiceName = 'frontend' select facet(SeverityText)
+-- Q67 task=group_by filter=or freq=hi (two keys: SeverityText, ScopeName)
+from index 'Logs/Search' where search(Body, 'error failed') select facet(SeverityText)
+-- Q68 task=recent filter=and,window freq=hi (recent failed-order logs from checkout)
+from index 'Logs/Search' where search(Body, 'failed order', and) and ServiceName = 'checkout' and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' order by Timestamp desc select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q69 task=recent filter=or,window freq=hi (recent error/failed/charge, severity>=warn)
+from index 'Logs/Search' where search(Body, 'error failed charge') and SeverityNumber >= 13 and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' order by Timestamp desc select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q70 task=recent filter=term,window freq=hi (recent error logs in a 6h window)
+from index 'Logs/Search' where search(Body, 'error') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' order by Timestamp desc select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q71 task=recent filter=phrase,window freq=mid (recent 'failed to place order')
+from index 'Logs/Search' where search(Body, '"failed to place order"') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' order by Timestamp desc select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q72 task=recent filter=and,window freq=hi (recent payment charges)
+from index 'Logs/Search' where search(Body, 'charge') and ServiceName = 'payment' and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' order by Timestamp desc select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q73 task=recent filter=window (pure time-series tail: recent cart logs, no text search)
+from index 'Logs/Search' where ServiceName = 'cart' and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' order by Timestamp desc select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q74 task=recent filter=regexp,window freq=hi (recent charg* logs in a 6h window)
+from index 'Logs/Search' where search(Body, 'charg*') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' order by Timestamp desc select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q75 task=recent filter=or,window freq=mid (recent connection/request/conversion logs)
+from index 'Logs/Search' where search(Body, 'connection request conversion') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' order by Timestamp desc select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q76 task=recent filter=and,window freq=hi (checkout failed&order, NO order by)
+from index 'Logs/Search' where search(Body, 'failed order', and) and ServiceName = 'checkout' and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q77 task=recent filter=or,window freq=hi (error/failed/charge sev>=warn, NO order by)
+from index 'Logs/Search' where search(Body, 'error failed charge') and SeverityNumber >= 13 and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q78 task=recent filter=term,window freq=hi (error 6h, NO order by)
+from index 'Logs/Search' where search(Body, 'error') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q79 task=recent filter=phrase,window freq=mid (failed to place order 6h, NO order by)
+from index 'Logs/Search' where search(Body, '"failed to place order"') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q80 task=recent filter=and,window freq=hi (payment charges, NO order by)
+from index 'Logs/Search' where search(Body, 'charge') and ServiceName = 'payment' and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q81 task=recent filter=window (cart tail, NO order by, no text search)
+from index 'Logs/Search' where ServiceName = 'cart' and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q82 task=recent filter=regexp,window freq=hi (charg.* 6h, NO order by)
+from index 'Logs/Search' where search(Body, 'charg*') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T06:00:00.0000000Z' select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q83 task=recent filter=or,window freq=mid (connection/request/conversion, NO order by)
+from index 'Logs/Search' where search(Body, 'connection request conversion') and Timestamp between '2025-09-23T00:00:00.0000000Z' and '2025-09-23T00:30:00.0000000Z' select Timestamp, ServiceName, SeverityText, Body limit 100
+-- Q84 task=join filter=term freq=hi (frontend 'failed' traces that also involve payment)
+UNSUPPORTED: join queries -- RavenDB has no join
+-- Q85 task=join filter=or freq=hi
+UNSUPPORTED: join queries -- RavenDB has no join
+-- Q86 task=join filter=phrase freq=mid
+UNSUPPORTED: join queries -- RavenDB has no join
+-- Q87 task=join filter=regexp freq=hi
+UNSUPPORTED: join queries -- RavenDB has no join
+-- Q88 task=join filter=and freq=hi (failed&order traces that also involve cart)
+UNSUPPORTED: join queries -- RavenDB has no join
+-- Q89 task=join filter=or freq=mid
+UNSUPPORTED: join queries -- RavenDB has no join
+-- Q90 task=join filter=and freq=hi
+UNSUPPORTED: join queries -- RavenDB has no join
+-- Q91 task=join filter=term freq=hi
+UNSUPPORTED: join queries -- RavenDB has no join
+-- Q92 task=join filter=prefix freq=hi
+UNSUPPORTED: join queries -- RavenDB has no join

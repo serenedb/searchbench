@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Print running RavenDB version; labels results JSON
+set -euo pipefail
+: "${RAVEN_PORT:=8080}"
+curl -fsS "http://127.0.0.1:${RAVEN_PORT}/build/version" 2>/dev/null \
+  | python3 -c "import sys,json;print(json.load(sys.stdin).get('FullVersion','unknown'))" 2>/dev/null || echo unknown
