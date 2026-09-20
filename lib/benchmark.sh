@@ -52,6 +52,7 @@ SEARCHBENCH_DATA_DIR="${SEARCHBENCH_DATA_DIR%/}/${SEARCHBENCH_DATASET}"
 # run_one_query skips remaining tries (a timed-out try won't get faster) — see
 # below. Keep ui/index.html's TIMEOUT_CAP in sync so the UI flags capped cells.
 : "${SEARCHBENCH_QUERY_TIMEOUT:=60}"
+: "${SEARCHBENCH_COLD_TIMEOUT:=$SEARCHBENCH_QUERY_TIMEOUT}"
 # Smoke scales (100k/1m/100m) validate plumbing, not cold-vs-hot perf: download
 # slices a bounded corpus prefix to a small part_000.parquet (lib/download-otel-logs).
 case "$SEARCHBENCH_DATASET" in
@@ -246,11 +247,16 @@ run_one_query() {
         # Tries are identical so $stdout_file holds the last try's result.
         # Latency = client-reported time on ./query's last stderr line
         # (psql \timing / curl %{time_total}), extracted by parse_timing.
-        # Cap each launch at SEARCHBENCH_QUERY_TIMEOUT: `timeout` sends SIGTERM
-        # at the ceiling (psql/curl exit, server cancels), SIGKILL 10s later.
+        # Cap each launch: `timeout` sends SIGTERM at the ceiling (psql/curl
+        # exit, server cancels), SIGKILL 10s later. Try 1 runs against dropped
+        # caches, so at large scales it is I/O bound in a way the warm tries are
+        # not -- SEARCHBENCH_COLD_TIMEOUT gives it its own ceiling, defaulting
+        # to the warm one so nothing changes unless it is set.
+        local cap="$SEARCHBENCH_QUERY_TIMEOUT"
+        [[ $i -eq 1 ]] && cap="$SEARCHBENCH_COLD_TIMEOUT"
         local runner=(./query)
-        if [[ "${SEARCHBENCH_QUERY_TIMEOUT:-0}" -gt 0 ]] && command -v timeout >/dev/null 2>&1; then
-            runner=(timeout -k 10 "${SEARCHBENCH_QUERY_TIMEOUT}s" ./query)
+        if [[ "${cap:-0}" -gt 0 ]] && command -v timeout >/dev/null 2>&1; then
+            runner=(timeout -k 10 "${cap}s" ./query)
         fi
         local rc
         if raw=$(printf '%s\n' "$query" | "${runner[@]}" 2>&1 1>"$stdout_file"); then
@@ -265,12 +271,12 @@ run_one_query() {
             if [[ -z "$rows" ]]; then
                 rows=$(grep -c '' "$stdout_file" 2>/dev/null) || rows=0
             fi
-        elif rc=$?; [[ "${SEARCHBENCH_QUERY_TIMEOUT:-0}" -gt 0 && ( $rc -eq 124 || $rc -eq 137 ) ]]; then
+        elif rc=$?; [[ "${cap:-0}" -gt 0 && ( $rc -eq 124 || $rc -eq 137 ) ]]; then
             # timeout(1): 124 = SIGTERM at ceiling, 137 = escalated to SIGKILL;
             # either way over the cap. Record the ceiling as latency, not null.
-            timing="$SEARCHBENCH_QUERY_TIMEOUT"
+            timing="$cap"
             rows="timeout"
-            warn "Q${qnum} try ${i}: exceeded ${SEARCHBENCH_QUERY_TIMEOUT}s — killed; recording ${SEARCHBENCH_QUERY_TIMEOUT}s (capped)"
+            warn "Q${qnum} try ${i}: exceeded ${cap}s — killed; recording ${cap}s (capped)"
         else
             timing="null"
             rows="err"
@@ -409,6 +415,7 @@ main() {
     log "data dir          : $SEARCHBENCH_DATA_DIR"
     log "queries           : $SEARCHBENCH_QUERIES"
     log "tries/query       : $SEARCHBENCH_TRIES"
+    log "query cap         : ${SEARCHBENCH_COLD_TIMEOUT}s cold / ${SEARCHBENCH_QUERY_TIMEOUT}s warm"
     log "timing            : client round-trip (psql \\timing / curl %{time_total})"
     log "restart between qs: $SEARCHBENCH_RESTART"
     log "results file      : $SEARCHBENCH_RESULTS"
