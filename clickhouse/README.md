@@ -1,8 +1,12 @@
 # SearchBench / ClickHouse engine
 
 Reproduces [TextBench](https://github.com/ClickHouse/TextBench)'s
-ClickHouse setup (same schema, same `text` index, same Q1–Q9) wired to
-SearchBench's shared driver. Numbers line up with both TextBench's
+ClickHouse setup (same schema including the `ORDER BY (ServiceName, Timestamp)`
+sorting key, same `text` index plus positions for phrase search, same Q1–Q9)
+wired to SearchBench's shared driver. The unsorted `ORDER BY tuple()` variant
+was removed: the sorted table is TextBench's schema and was faster at every
+published scale (1B hot median 349 vs 489 ms, 10B 10 vs 22 timeouts) and 12%
+smaller on disk. Numbers line up with both TextBench's
 leaderboard and SereneDB's `results/`.
 
 Needs: `jq`, `wget`/`curl`, and `ss`/`fuser`/`lsof`. `./install` fetches

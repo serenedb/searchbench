@@ -21,5 +21,5 @@ CREATE TABLE otel_logs
     INDEX text_idx(Body) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(Body), support_phrase_search = 1)
 )
 ENGINE = MergeTree
-ORDER BY tuple()
+ORDER BY (ServiceName, Timestamp)
 SETTINGS allow_experimental_text_index_phrase_search = 1;
