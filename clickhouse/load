@@ -56,5 +56,10 @@ echo "==> ingesting ${#parquet[@]} file(s) via server-side file('parquet/part_*.
 "${CH[@]}" --query \
     "INSERT INTO otel_logs SELECT * EXCEPT (TimestampTime) FROM file('parquet/part_*.parquet', Parquet)"
 
+# Stop background merges for the benchmark table as soon as the ingest is done, so the query phase
+# measures queries and not the merge backlog (SereneDB compacts inside its load; see report).
+"${CH[@]}" --query "SYSTEM STOP MERGES otel_logs"
+echo "==> merges stopped: $("${CH[@]}" --query "SELECT count() FROM system.parts WHERE active AND table='otel_logs'") active parts"
+
 rows=$("${CH[@]}" --query "SELECT count() FROM otel_logs")
 echo "==> load done: ${rows} rows"

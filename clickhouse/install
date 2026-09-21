@@ -17,7 +17,7 @@ set -euo pipefail
 : "${CLICKHOUSE_BIN:=./clickhouse}"
 : "${CH_DATA_DIR:=${PWD}/clickhouse_data}"
 : "${CH_BACKEND:=docker}"
-: "${CH_IMAGE:=clickhouse/clickhouse-server:26.8.2.7}"
+: "${CH_IMAGE:=clickhouse/clickhouse-server:head}"
 : "${CH_CONTAINER:=searchbench-clickhouse}"
 
 command -v jq >/dev/null || { echo "jq not found on PATH" >&2; exit 1; }

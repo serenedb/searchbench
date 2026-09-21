@@ -14,7 +14,7 @@ export SEARCHBENCH_QUERIES="${SEARCHBENCH_QUERIES:-queries.sql}"
 # check/load/query/data-size/version run the client inside the container with no
 # changes. install/start/stop branch on CH_BACKEND to manage the container.
 export CH_BACKEND="${CH_BACKEND:-docker}"
-export CH_IMAGE="${CH_IMAGE:-clickhouse/clickhouse-server:26.8.2.7}"
+export CH_IMAGE="${CH_IMAGE:-clickhouse/clickhouse-server:head}"
 export CH_CONTAINER="${CH_CONTAINER:-searchbench-clickhouse}"
 if [[ "$CH_BACKEND" == docker ]]; then
     export CLICKHOUSE_BIN="$(cd "$(dirname "$0")" && pwd)/ch-exec"
