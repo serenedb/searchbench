@@ -75,6 +75,8 @@ export interface BenchState {
   sortDir: SortDir;
   /** Engines the user switched off, by `system`. */
   hidden: ReadonlySet<string>;
+  /** Preserve an explicit allowlist when sharing, including all/none selected. */
+  includeOnly: boolean;
   /** Engine tag filter. Never encoded in the URL — the standalone had no UI for it. */
   activeTags: ReadonlySet<string>;
   /** Query-category filter, by `query_tags[].task`. */
@@ -100,6 +102,7 @@ export const INITIAL_STATE: BenchState = {
   sortRow: DEFAULT_SORT_ROW,
   sortDir: 1,
   hidden: new Set(),
+  includeOnly: false,
   activeTags: new Set(),
   activeQTasks: new Set(),
   manualOrder: null,

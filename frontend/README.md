@@ -27,6 +27,16 @@ be opened with a double click, copied by itself, or hosted as a static page.
 No CDN, module fetch or JSON fetch is needed to render it. URL filters and the
 theme toggle work in both modes.
 
+## Stable embed links
+
+Use `?dataset=otel_logs_100m&include=SereneDB,ArangoDB&theme=dark` to pin the
+engines in an embed. `include` matches exact `system` names, takes precedence
+over legacy `hidden` exclusions, and stays an allowlist when the URL is
+canonicalized to `?s=` (packed key `i`). New engines are excluded automatically.
+An empty or unknown-only list shows no engines. Legacy `hidden` / packed `h`
+links still work. Pin `theme=light` or `theme=dark` explicitly in each themed
+iframe; an omitted theme uses the visitor's saved preference.
+
 ## Refresh results
 
 With Bash and jq installed, run `./frontend/build_results` from the repository

@@ -101,7 +101,12 @@ export function shortState(state: BenchState, env: CodecEnv, theme: ThemeName): 
   put('c', state.valueMode, 'relative');
   put('l', state.scale, 'log');
   put('q', csv(state.activeQTasks), '');
-  put('h', csv(state.hidden), '');
+  if (state.includeOnly) {
+    // Keep even an empty allowlist. Omitting it would reveal every engine.
+    compact.i = csv(env.systems.filter((system) => !state.hidden.has(system)));
+  } else {
+    put('h', csv(state.hidden), '');
+  }
   put('s', state.sortRow, DEFAULT_SORT_ROW);
   put('sd', state.sortDir, 1);
   put('e', state.sortByEngine, null);
@@ -144,6 +149,7 @@ const FIELDS: Record<string, string> = {
   scale: 'l',
   categories: 'q',
   hidden: 'h',
+  include: 'i',
   sort: 's',
   sortDir: 'sd',
   sortEngine: 'e',
@@ -190,7 +196,13 @@ export function restoreUrlState(
     patch.valueMode = oneOf<ValueMode>('cells', ['relative', 'sec', 'ms'], initial.valueMode)!;
     patch.scale = oneOf<Scale>('scale', ['log', 'linear'], initial.scale)!;
     patch.activeQTasks = new Set(split('categories').filter((t) => env.qTasks.includes(t)));
-    patch.hidden = new Set(split('hidden').filter((s) => validSystems.has(s)));
+    // Include takes precedence over legacy hidden/exclusion links. Derive the
+    // complement against today's data so newly added engines stay out of embeds.
+    patch.includeOnly = typeof get('include') === 'string';
+    const included = new Set(split('include'));
+    patch.hidden = patch.includeOnly
+      ? new Set(env.systems.filter((system) => !included.has(system)))
+      : new Set(split('hidden').filter((s) => validSystems.has(s)));
     const sort = get('sort');
     patch.sortRow = (typeof sort === 'string' ? sort : '') || initial.sortRow;
     patch.sortDir = (String(get('sortDir')) === '-1' ? -1 : 1) as SortDir;

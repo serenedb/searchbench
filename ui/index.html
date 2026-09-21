@@ -191,7 +191,7 @@ const isTimeout = v => typeof v === "number" && v >= TIMEOUT_CAP;
 const state = {
   dataset: null, metric: "hot", valueMode: "relative", tab: "table", scale: "log",
   sortRow: "geomean", sortDir: 1,
-  hidden: new Set(), activeTags: new Set(), activeQTasks: new Set(),
+  hidden: new Set(), includeOnly: false, activeTags: new Set(), activeQTasks: new Set(),
   manualOrder: null, sortByEngine: null, sortByEngineDir: 1,
   sel: null, theme: "dark", max: false, explainOpen: false, hiddenPanels: new Set(),
 };
@@ -230,7 +230,12 @@ function shortState() {
   put("c", state.valueMode, "relative");
   put("l", state.scale, "log");
   put("q", csv(state.activeQTasks), "");
-  put("h", csv(state.hidden), "");
+  if (state.includeOnly) {
+    // Preserve an allowlist even when every known engine (or none) is selected.
+    compact.i = csv([...new Set(DATA.map(r => r.system))].filter(s => !state.hidden.has(s)));
+  } else {
+    put("h", csv(state.hidden), "");
+  }
   put("s", state.sortRow, "geomean");
   put("sd", state.sortDir, 1);
   put("e", state.sortByEngine, null);
@@ -254,7 +259,7 @@ function restoreUrlState() {
   try {
     const p = new URLSearchParams(window.location.search);
     const packed = base64UrlDecode(p.get("s"));
-    const fields = { dataset: "d", view: "t", run: "r", cells: "c", scale: "l", categories: "q", hidden: "h", sort: "s", sortDir: "sd", sortEngine: "e", sortEngineDir: "ed", order: "o", theme: "th", expanded: "x", hide: "p" };
+    const fields = { dataset: "d", view: "t", run: "r", cells: "c", scale: "l", categories: "q", hidden: "h", include: "i", sort: "s", sortDir: "sd", sortEngine: "e", sortEngineDir: "ed", order: "o", theme: "th", expanded: "x", hide: "p" };
     // A packed short state is the baseline, while readable parameters next to
     // it are intentional overrides. This makes links like `?s=…&hide=header`
     // practical for embeds; the next render canonicalizes them back to `?s=`.
@@ -269,7 +274,11 @@ function restoreUrlState() {
     state.valueMode = oneOf("cells", ["relative", "sec", "ms"], state.valueMode);
     state.scale = oneOf("scale", ["log", "linear"], state.scale);
     state.activeQTasks = new Set(split("categories").filter(t => qTasksFor().includes(t)));
-    state.hidden = new Set(split("hidden").filter(s => validSystems.has(s)));
+    state.includeOnly = typeof get("include") === "string";
+    const included = new Set(split("include"));
+    state.hidden = state.includeOnly
+      ? new Set([...validSystems].filter(s => !included.has(s)))
+      : new Set(split("hidden").filter(s => validSystems.has(s)));
     state.sortRow = get("sort") || state.sortRow;
     state.sortDir = String(get("sortDir")) === "-1" ? -1 : 1;
     const engine = get("sortEngine");
