@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${MEILI_PORT:=7700}"
+: "${MEILI_KEY:=searchbench-meili-master-key-01}"
+curl -fsS -H "Authorization: Bearer ${MEILI_KEY}" "http://127.0.0.1:${MEILI_PORT}/version" 2>/dev/null \
+  | python3 -c "import sys,json;print(json.load(sys.stdin).get('pkgVersion','unknown'))" 2>/dev/null || echo unknown

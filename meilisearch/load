@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Recreate the index with benchmark-faithful settings and bulk-ingest the corpus.
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set to a directory containing part_*.parquet (no default)}"
+: "${MEILI_PORT:=7700}"; : "${MEILI_KEY:=searchbench-meili-master-key-01}"
+: "${MEILI_INDEX:=otel_logs}"; : "${MEILI_DATA_DIR:=${PWD}/meili-data}"
+M="http://127.0.0.1:${MEILI_PORT}"
+AUTH=(-H "Authorization: Bearer ${MEILI_KEY}" -H 'Content-Type: application/json')
+
+if [[ "${SEARCHBENCH_SKIP_LOAD:-no}" == "yes" ]]; then
+    echo "[load] SEARCHBENCH_SKIP_LOAD=yes, leaving index as-is"; exit 0
+fi
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+shopt -s nullglob; files=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet ); shopt -u nullglob
+[[ ${#files[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+./configure-features
+
+echo "[load] recreating index ${MEILI_INDEX}"
+curl -fsS -X DELETE "$M/indexes/${MEILI_INDEX}" "${AUTH[@]}" >/dev/null 2>&1 || true
+sleep 2
+curl -fsS -X POST "$M/indexes" "${AUTH[@]}" \
+     --data-binary "{\"uid\":\"${MEILI_INDEX}\",\"primaryKey\":\"id\"}" >/dev/null
+sleep 2
+
+# Settings that are NOT optional for a faithful comparison:
+#  * typoTolerance off   -- on by default; leaving it on makes every term match
+#                           its typo neighbours, so `error` would also match
+#                           `eror`/`errors`. No other engine here does that.
+#  * maxTotalHits        -- defaults to 1000, which SILENTLY caps every count.
+#  * maxValuesPerFacet   -- defaults to 100; group_by uses facets and would be
+#                           truncated on higher-cardinality keys.
+#  * filterableAttributes includes Body, which is what enables CONTAINS /
+#    STARTS WITH (and therefore OR semantics) in the filter language.
+echo "[load] applying index settings"
+curl -fsS -X PATCH "$M/indexes/${MEILI_INDEX}/settings" "${AUTH[@]}" --data-binary '{
+ "searchableAttributes":["Body"],
+ "filterableAttributes":["Body","ServiceName","SeverityText","SeverityNumber","ScopeName","TimestampMs"],
+ "sortableAttributes":["TimestampMs"],
+ "typoTolerance":{"enabled":false},
+ "pagination":{"maxTotalHits":1000000000},
+ "faceting":{"maxValuesPerFacet":100000}}' >/dev/null
+sleep 3
+
+MEILI_URL="$M" MEILI_KEY="$MEILI_KEY" MEILI_INDEX="$MEILI_INDEX" \
+  "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py --local-dir "$SEARCHBENCH_DATA_DIR" --files "${#files[@]}"
+
+n=$(curl -fsS "$M/indexes/${MEILI_INDEX}/stats" -H "Authorization: Bearer ${MEILI_KEY}" \
+    | "${SEARCHBENCH_PYTHON:-python3}" -c "import sys,json;print(json.load(sys.stdin).get('numberOfDocuments','unknown'))")
+echo "[load] ${MEILI_INDEX} documents=${n}"
