@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+: "${QW_CONTAINER:=searchbench-quickwit}"
+docker inspect "$QW_CONTAINER" >/dev/null 2>&1 && docker stop --time 60 "$QW_CONTAINER" >/dev/null 2>&1 || true

@@ -1,0 +1,11 @@
+{
+  "engine": "Quickwit",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "v0.9.0",
+  "load_time": 765.841,
+  "data_size": 26024407040,
+  "os": "Ubuntu 24.04.4 LTS",
+  "date": "2026-09-20",
+  "loaded_by": "queries.dsl"
+}
