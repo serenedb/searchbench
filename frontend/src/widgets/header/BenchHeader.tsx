@@ -1,9 +1,11 @@
-/* SearchBench identity, source link, service switcher and shared theme toggle.
+/* SearchBench identity, run selector, source link, service switcher and shared
+ * theme toggle.
  * Router context selects SPA links in the playground; standalone uses anchors. */
 
 import { Link, useInRouterContext } from 'react-router-dom';
 import { findService, GithubIcon, ServiceSwitcher, SereneLogo, useTheme } from '@serenedb/ui';
 import type { LinkRenderer, Theme } from '@serenedb/ui';
+import { takeRuns, type BenchRunOption } from '../../entities/results/model/source';
 import { SERVICE_ID } from '../../shared/config';
 import { Panel } from '../../shared/ui';
 
@@ -11,6 +13,20 @@ const THEMES: readonly Theme[] = ['dark', 'light'];
 
 /* The benchmark harness and the UI live in this repository. */
 const SOURCE = 'https://github.com/serenedb/searchbench';
+
+/* How a run reads: `2026-09-21 · 38 engines`, and just `38 engines` when the
+   rows carry no date.
+
+   The host that supplies the runs formats the same string a second time, so
+   that an operator adding one sees the label a reader will get. Copied and not
+   shared, because sharing it would mean a dependency on the host's package and
+   this one deliberately has none: nothing here needs a backend, which is what
+   keeps `npm run build` producing a file that opens over file:// with no
+   network at all (tests/offline.test.mjs asserts exactly that). */
+function runLabel(run: BenchRunOption): string {
+  const engines = `${run.engines} engine${run.engines === 1 ? '' : 's'}`;
+  return run.date === null ? engines : `${run.date} · ${engines}`;
+}
 
 /* `owner/repo` out of a GitHub URL. The standalone wrote the string out next to
    the href; deriving it means the label cannot drift from where the button
@@ -31,6 +47,9 @@ export function BenchHeader() {
   const { theme, setTheme } = useTheme();
   const service = findService(SERVICE_ID);
   const name = service?.name ?? 'SearchBench';
+  /* One run is the page saying what it is, not a choice, and the standalone
+     offers none at all — in both cases the control would be a dead widget. */
+  const runs = takeRuns();
 
   return (
     <Panel className="sb-head">
@@ -70,6 +89,50 @@ export function BenchHeader() {
         })}
 
         <ServiceSwitcher currentId={SERVICE_ID} internal={internal} renderLink={routerLink} />
+
+        {/* Beside the identity rather than out with the source link and the
+            theme toggle: it names which benchmark is on screen, which is part
+            of what this page is, not a preference about how to view it. It
+            costs ~157px on a strip that is never narrower than the 1280 this
+            layout is pinned to (searchbench.css, `.sb-app { min-width }`), so
+            the row stays one line and a window below that scrolls sideways
+            with the rest of the page rather than squeezing this control alone.
+
+            A native select, with the UA's own caret and popup. `.sb-app`
+            declares `color-scheme`, so both are already drawn in the theme the
+            page is in, and a hand-built popover would be more code, worse with
+            a keyboard and worse on a phone for the same result. Borders,
+            padding and weight are the GitHub button's beside it; `borderRadius`
+            is spelled out because a select is the one control a UA rounds on
+            its own, and nothing on this page has a corner.
+
+            `value` tracks the host and never local state: a pick loads another
+            document, and a control that moved on its own would be claiming a
+            switch that has not happened yet. */}
+        {runs !== null && runs.runs.length > 1 && (
+          <select
+            aria-label="Benchmark run"
+            title="Which measurement of this benchmark to show"
+            value={runs.currentId}
+            onChange={(e) => runs.onSelect(e.currentTarget.value)}
+            style={{
+              border: '.5px solid var(--line)',
+              borderRadius: 0,
+              background: 'var(--inset)',
+              color: 'var(--fg)',
+              fontFamily: 'inherit',
+              fontSize: 11,
+              fontWeight: 700,
+              padding: '4px 6px',
+            }}
+          >
+            {runs.runs.map((run) => (
+              <option key={run.id} value={run.id}>
+                {runLabel(run)}
+              </option>
+            ))}
+          </select>
+        )}
 
         <a
           href={SOURCE}
