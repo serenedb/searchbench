@@ -16,7 +16,7 @@ set -euo pipefail
 : "${CH_DATA_DIR:=${PWD}/clickhouse_data}"
 : "${CH_LOG:=${PWD}/clickhouse-server.log}"
 : "${CH_BACKEND:=docker}"
-: "${CH_IMAGE:=clickhouse/clickhouse-server:26.8.2.7}"
+: "${CH_IMAGE:=clickhouse/clickhouse-server:head}"
 : "${CH_CONTAINER:=searchbench-clickhouse}"
 
 # Docker backend: run the official image with host networking (server binds
@@ -34,6 +34,10 @@ if [[ "$CH_BACKEND" == docker ]]; then
         # ClickBench INSERT..SELECT FROM file() pattern -- no client streaming).
         # Only when SEARCHBENCH_DATA_DIR is set (the driver roots it per-dataset).
         pq_mount=()
+        # The driver calls ./start before ./load downloads the corpus, so the dataset directory may not
+        # exist yet; create it (as serenedb/start does) or the bind mount is skipped and the INSERT
+        # silently loads 0 rows (the 1B guard then aborts, the 100M smoke scale runs on an empty table).
+        [[ -n "${SEARCHBENCH_DATA_DIR:-}" ]] && mkdir -p "${SEARCHBENCH_DATA_DIR}"
         [[ -n "${SEARCHBENCH_DATA_DIR:-}" && -d "${SEARCHBENCH_DATA_DIR:-}" ]] && \
             pq_mount=(-v "${SEARCHBENCH_DATA_DIR}:/var/lib/clickhouse/user_files/parquet:ro")
         # Run as the host user so the bind-mount stays host-owned (not uid 101 /
@@ -48,7 +52,11 @@ if [[ "$CH_BACKEND" == docker ]]; then
             "$CH_IMAGE" >/dev/null
     fi
     for _ in $(seq 1 60); do
-        ./check >/dev/null 2>&1 && { echo "ClickHouse up on :${CH_TCP_PORT} (docker)"; exit 0; }
+        if ./check >/dev/null 2>&1; then
+            # SYSTEM STOP MERGES does not survive a restart and the driver restarts the server before every query.
+            "$CLICKHOUSE_BIN" client --host "$CH_HOST" --port "$CH_TCP_PORT" --query 'SYSTEM STOP MERGES otel_logs' >/dev/null 2>&1 || true
+            echo "ClickHouse up on :${CH_TCP_PORT} (docker), merges stopped"; exit 0
+        fi
         sleep 1
     done
     echo "ClickHouse (docker) did not become ready within 60s" >&2
