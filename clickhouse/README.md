@@ -1,13 +1,25 @@
 # SearchBench / ClickHouse engine
 
 Reproduces [TextBench](https://github.com/ClickHouse/TextBench)'s
-ClickHouse setup (same schema, same `text` index, same Q1–Q9) wired to
-SearchBench's shared driver. Numbers line up with both TextBench's
+ClickHouse setup (same schema including the `ORDER BY (ServiceName, Timestamp)`
+sorting key, same `text` index plus positions for phrase search, same Q1–Q9)
+wired to SearchBench's shared driver. The unsorted `ORDER BY tuple()` variant
+was removed: the sorted table is TextBench's schema and was faster at every
+published scale (1B hot median 349 vs 489 ms, 10B 10 vs 22 timeouts) and 12%
+smaller on disk. Numbers line up with both TextBench's
 leaderboard and SereneDB's `results/`.
 
 Needs: `jq`, `wget`/`curl`, and `ss`/`fuser`/`lsof`. `./install` fetches
 the ClickHouse binary automatically if `$CLICKHOUSE_BIN` isn't set and
 `./clickhouse` doesn't exist (runs `curl https://clickhouse.com/ | sh`).
+
+## Configuration
+
+| | |
+|---|---|
+| ClickHouse | `clickhouse/clickhouse-server:26.9.10.4` (latest stable release; set `CH_IMAGE` to override). It is the first 26.9 patch with the text index posting-list cache on by default ([ClickHouse#120677](https://github.com/ClickHouse/ClickHouse/pull/120677), backported in [ClickHouse#123759](https://github.com/ClickHouse/ClickHouse/pull/123759)) |
+| Merges | `./load` issues `SYSTEM STOP MERGES otel_logs` after the insert and `./start` re-issues it after every restart (the driver restarts the server before each 1B query and the setting does not persist). Without it the load leaves ~1000 parts that merge for the whole query phase, and every per-query restart aborts and restarts those merges, so the query phase measures the merge backlog |
+| 10B cold ceiling | run with `SEARCHBENCH_COLD_TIMEOUT=180`: on dropped caches every scan query's first try takes over 60 s at 10B, and with the default 60 s ceiling a capped cold try ends the query and pads the hot tries with 60 s. The published 10B ClickHouse row was produced the same way (its file has cold values of 99 s and 180 s) |
 
 ## Run
 
