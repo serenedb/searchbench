@@ -127,6 +127,20 @@ real run.
   terminal).
 - No cross-engine correctness validation.
 
+## Hardware
+
+All published results were measured on the same machine class:
+
+| | |
+|---|---|
+| Instance | GCP `n2-standard-32` |
+| CPU | 32 vCPUs (16 physical cores × 2 hyperthreads) |
+| RAM | 128 GB |
+| Disk | 3 TB `pd-ssd` |
+| OS | Ubuntu 24.04 |
+
+Each engine runs alone on the VM and may use all of its CPUs and memory.
+
 ## License
 
 Apache-2.0. OTel-logs corpus + TextBench-derived queries (Apache-2.0);
