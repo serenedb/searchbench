@@ -92,7 +92,7 @@
     /* body */
     background: var(--bg);
     color: var(--fg);
-    font-family: 'Gilroy', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    font-family: 'Urbanist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
         sans-serif;
 
     /* Two UA defaults the standalone inherited and the shell overrides. It
