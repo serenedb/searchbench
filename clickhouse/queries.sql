@@ -1,9 +1,17 @@
--- regexp/prefix/wildcard/fuzzy are not expressible on the text index; they run
--- as predicates over tokens(lower(Body),'splitByNonAlpha'), which matches the
--- index tokenizer. These are full scans (~100x slower than hasToken), each
--- guarded by a substring prefilter that is a sound superset -- for fuzzy X~N by
--- pigeonhole: split X into N+1 parts, at most N can be damaged.
--- Lucene regexp matches a WHOLE term, hence match(x,'^X$').
+-- regexp/prefix have no text-index operator. They are evaluated Lucene-style: a
+-- scalar subquery expands the pattern against the index's own term dictionary
+-- (mergeTreeTextIndex), and hasAnyTokens looks the expanded terms up in the index.
+-- Anchored predicates (startsWith, match('^X...')) seek into the sorted dictionary
+-- instead of scanning its ~18M terms (mostly hex ids).
+-- Lucene regexp matches a WHOLE term, hence match(token,'^X$').
+-- Q23 (fuzzy-2) expands against the whole dictionary (no anchor to seek on).
+-- Q24 (fuzzy AND prefix) narrows rows with the prefix expansion and checks the
+-- fuzzy predicate only on those rows; the two may hold on different tokens.
+-- Fuzzy Q22 and Q59, unanchored patterns (Q26 %tion, Q27 %nnec%) and Q82
+-- (LIMIT without ORDER BY, stops at the first matching granules) stay full-scan
+-- predicates over tokens(lower(Body),'splitByNonAlpha'), which matches the index
+-- tokenizer, each guarded by a substring prefilter that is a sound superset --
+-- for fuzzy X~N by pigeonhole: split X into N+1 parts, at most N can be damaged.
 -- 22 queries remain UNSUPPORTED: 21 top_k BM25 (text index carries no ranking)
 -- and one proximity.
 
@@ -38,25 +46,25 @@ SELECT count() FROM otel_logs WHERE matchPhrase(Body, 'failed to place order') O
 -- Q15 task=count filter=phrase,and freq=mid (phrase AND term)
 SELECT count() FROM otel_logs WHERE matchPhrase(Body, 'failed to place order') AND hasToken(Body, 'charge');
 -- Q16 task=count filter=regexp freq=hi (charg.*)
-SELECT count() FROM otel_logs WHERE position(lower(Body), 'charg') > 0 AND arrayExists(x -> match(x, '^charg.*$'), tokens(lower(Body), 'splitByNonAlpha'));
+SELECT count() FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE match(token, '^charg.*$')));
 -- Q17 task=count filter=regexp freq=hi (ord.*)
-SELECT count() FROM otel_logs WHERE position(lower(Body), 'ord') > 0 AND arrayExists(x -> match(x, '^ord.*$'), tokens(lower(Body), 'splitByNonAlpha'));
+SELECT count() FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE match(token, '^ord.*$')));
 -- Q18 task=count filter=regexp freq=mid (conn.*)
-SELECT count() FROM otel_logs WHERE position(lower(Body), 'conn') > 0 AND arrayExists(x -> match(x, '^conn.*$'), tokens(lower(Body), 'splitByNonAlpha'));
+SELECT count() FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE match(token, '^conn.*$')));
 -- Q19 task=count filter=regexp freq=hi (single-char wildcard mid: c.che -> cache)
-SELECT count() FROM otel_logs WHERE position(lower(Body), 'che') > 0 AND arrayExists(x -> match(x, '^c.che$'), tokens(lower(Body), 'splitByNonAlpha'));
+SELECT count() FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE match(token, '^c.che$')));
 -- Q20 task=count filter=prefix freq=mid (conn)
-SELECT count() FROM otel_logs WHERE position(lower(Body), 'conn') > 0 AND arrayExists(x -> startsWith(x, 'conn'), tokens(lower(Body), 'splitByNonAlpha'));
+SELECT count() FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE startsWith(token, 'conn')));
 -- Q21 task=count filter=prefix freq=hi (charg)
-SELECT count() FROM otel_logs WHERE position(lower(Body), 'charg') > 0 AND arrayExists(x -> startsWith(x, 'charg'), tokens(lower(Body), 'splitByNonAlpha'));
+SELECT count() FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE startsWith(token, 'charg')));
 -- Q22 task=count filter=fuzzy freq=mid (levenshtein distance 1)
 SELECT count() FROM otel_logs WHERE (position(lower(Body), 'conne') > 0 OR position(lower(Body), 'ction') > 0) AND arrayExists(x -> damerauLevenshteinDistance(x, 'connection') <= 1, tokens(lower(Body), 'splitByNonAlpha'));
 -- Q23 task=count filter=fuzzy freq=mid (levenshtein distance 2)
-SELECT count() FROM otel_logs WHERE (position(lower(Body), 'con') > 0 OR position(lower(Body), 'nec') > 0 OR position(lower(Body), 'tion') > 0) AND arrayExists(x -> damerauLevenshteinDistance(x, 'connection') <= 2, tokens(lower(Body), 'splitByNonAlpha'));
+SELECT count() FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE damerauLevenshteinDistance(token, 'connection') <= 2));
 -- Q24 task=count filter=fuzzy,prefix freq=mid (levenshtein-2 AND prefix, same 'conn' root)
-SELECT count() FROM otel_logs WHERE position(lower(Body), 'conn') > 0 AND arrayExists(x -> damerauLevenshteinDistance(x, 'connection') <= 2, tokens(lower(Body), 'splitByNonAlpha')) AND arrayExists(x -> startsWith(x, 'conn'), tokens(lower(Body), 'splitByNonAlpha'));
+SELECT count() FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE startsWith(token, 'conn'))) AND arrayExists(x -> damerauLevenshteinDistance(x, 'connection') <= 2, tokens(lower(Body), 'splitByNonAlpha'));
 -- Q25 task=count filter=like freq=mid (prefix wildcard conn%)
-SELECT count() FROM otel_logs WHERE position(lower(Body), 'conn') > 0 AND arrayExists(x -> startsWith(x, 'conn'), tokens(lower(Body), 'splitByNonAlpha'));
+SELECT count() FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE startsWith(token, 'conn')));
 -- Q26 task=count filter=like freq=hi (suffix wildcard %tion)
 SELECT count() FROM otel_logs WHERE position(lower(Body), 'tion') > 0 AND arrayExists(x -> endsWith(x, 'tion'), tokens(lower(Body), 'splitByNonAlpha'));
 -- Q27 task=count filter=like freq=mid (middle wildcard %nnec%)
@@ -122,7 +130,7 @@ SELECT SeverityText, count() AS cnt FROM otel_logs WHERE hasAllTokens(Body, ['fa
 -- Q57 task=group_by filter=or freq=hi (key=ScopeName, top 20 ordered)
 SELECT ScopeName, count() AS cnt FROM otel_logs WHERE hasAnyTokens(Body, ['error', 'failed']) GROUP BY ScopeName ORDER BY cnt DESC LIMIT 20;
 -- Q58 task=group_by filter=regexp freq=hi (key=ScopeName)
-SELECT ScopeName, count() AS cnt FROM otel_logs WHERE position(lower(Body), 'charg') > 0 AND arrayExists(x -> match(x, '^charg.*$'), tokens(lower(Body), 'splitByNonAlpha')) GROUP BY ScopeName ORDER BY cnt DESC LIMIT 20;
+SELECT ScopeName, count() AS cnt FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE match(token, '^charg.*$'))) GROUP BY ScopeName ORDER BY cnt DESC LIMIT 20;
 -- Q59 task=group_by filter=fuzzy freq=mid (key=ScopeName)
 SELECT ScopeName, count() AS cnt FROM otel_logs WHERE (position(lower(Body), 'conne') > 0 OR position(lower(Body), 'ction') > 0) AND arrayExists(x -> damerauLevenshteinDistance(x, 'connection') <= 1, tokens(lower(Body), 'splitByNonAlpha')) GROUP BY ScopeName ORDER BY cnt DESC LIMIT 20;
 -- Q60 task=group_by filter=or freq=hi (key=ScopeName, NO order by)
@@ -154,7 +162,7 @@ SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs WHERE ServiceNa
 -- Q73 task=recent filter=window (pure time-series tail: recent cart logs, no text search)
 SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs WHERE ServiceName = 'cart' AND Timestamp BETWEEN '2025-09-23 00:00:00' AND '2025-09-23 00:30:00' ORDER BY Timestamp DESC LIMIT 100;
 -- Q74 task=recent filter=regexp,window freq=hi (recent charg* logs in a 6h window)
-SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs WHERE position(lower(Body), 'charg') > 0 AND arrayExists(x -> match(x, '^charg.*$'), tokens(lower(Body), 'splitByNonAlpha')) AND Timestamp BETWEEN '2025-09-23 00:00:00' AND '2025-09-23 06:00:00' ORDER BY Timestamp DESC LIMIT 100;
+SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs WHERE hasAnyTokens(Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE match(token, '^charg.*$'))) AND Timestamp BETWEEN '2025-09-23 00:00:00' AND '2025-09-23 06:00:00' ORDER BY Timestamp DESC LIMIT 100;
 -- Q75 task=recent filter=or,window freq=mid (recent connection/request/conversion logs)
 SELECT Timestamp, ServiceName, SeverityText, Body FROM otel_logs WHERE hasAnyTokens(Body, ['connection', 'request', 'conversion']) AND Timestamp BETWEEN '2025-09-23 00:00:00' AND '2025-09-23 00:30:00' ORDER BY Timestamp DESC LIMIT 100;
 -- Q76 task=recent filter=and,window freq=hi (checkout failed&order, NO order by)
@@ -180,9 +188,9 @@ SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId 
 -- Q86 task=join filter=phrase freq=mid
 SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId = b.TraceId WHERE a.TraceId != '' AND matchPhrase(a.Body, 'failed to place order') AND b.ServiceName = 'payment';
 -- Q87 task=join filter=regexp freq=hi
-SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId = b.TraceId WHERE a.TraceId != '' AND position(lower(a.Body), 'charg') > 0 AND arrayExists(x -> match(x, '^charg.*$'), tokens(lower(a.Body), 'splitByNonAlpha')) AND b.ServiceName = 'frontend';
+SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId = b.TraceId WHERE a.TraceId != '' AND hasAnyTokens(a.Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE match(token, '^charg.*$'))) AND b.ServiceName = 'frontend';
 -- Q88 task=join filter=and freq=hi (failed&order traces that also involve cart)
-SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId = b.TraceId WHERE a.TraceId != '' AND hasAllTokens(a.Body, ['failed', 'order']) AND b.ServiceName = 'cart';
+SELECT count() FROM (SELECT DISTINCT TraceId FROM otel_logs a WHERE a.TraceId != '' AND hasAllTokens(a.Body, ['failed', 'order'])) a WHERE EXISTS (SELECT 1 FROM otel_logs b WHERE b.TraceId = a.TraceId AND b.ServiceName = 'cart');
 -- Q89 task=join filter=or freq=mid
 SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId = b.TraceId WHERE a.TraceId != '' AND hasAnyTokens(a.Body, ['connection', 'request']) AND b.ServiceName = 'frontend';
 -- Q90 task=join filter=and freq=hi
@@ -190,4 +198,4 @@ SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId 
 -- Q91 task=join filter=term freq=hi
 SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId = b.TraceId WHERE a.TraceId != '' AND hasToken(a.Body, 'order') AND b.ServiceName = 'payment';
 -- Q92 task=join filter=prefix freq=hi
-SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId = b.TraceId WHERE a.TraceId != '' AND position(lower(a.Body), 'charg') > 0 AND arrayExists(x -> startsWith(x, 'charg'), tokens(lower(a.Body), 'splitByNonAlpha')) AND b.ServiceName = 'frontend';
+SELECT count(DISTINCT a.TraceId) FROM otel_logs a JOIN otel_logs b ON a.TraceId = b.TraceId WHERE a.TraceId != '' AND hasAnyTokens(a.Body, (SELECT groupUniqArray(token) FROM mergeTreeTextIndex(currentDatabase(), otel_logs, text_idx) WHERE startsWith(token, 'charg'))) AND b.ServiceName = 'frontend';
