@@ -10,6 +10,8 @@ import type { BenchRow } from './rows';
 /** 10 ms — ClickBench's ratio-smoothing constant. */
 export const SMOOTH = 0.01;
 
+export const RESOLUTION = 0.001;
+
 /** Per-try wall-clock cap (lib/benchmark.sh default). */
 export const TIMEOUT_CAP = 60;
 
@@ -46,11 +48,9 @@ export function smoothedRatio(t: number | null, best: number | null): number | n
   return (SMOOTH + t) / (SMOOTH + best);
 }
 
-/** Plain ratio, as shown in a relative cell. `Infinity` when only `t` is > 0. */
 export function ratioOf(t: number | null, best: number | null): number | null {
   if (typeof t !== 'number' || typeof best !== 'number') return null;
-  if (best === 0) return t === 0 ? 1 : Infinity;
-  return t / best;
+  return Math.max(t, RESOLUTION) / Math.max(best, RESOLUTION);
 }
 
 /**

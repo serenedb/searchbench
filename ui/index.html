@@ -185,6 +185,7 @@ function colorOf(sys) {
 }
 
 const SMOOTH = 0.01;                 // 10 ms, ClickBench ratio-smoothing constant
+const RESOLUTION = 0.001;
 const TIMEOUT_CAP = 60;              // per-try wall-clock cap (lib/benchmark.sh default)
 const isTimeout = v => typeof v === "number" && v >= TIMEOUT_CAP;
 
@@ -354,8 +355,7 @@ function smoothedRatio(t, best) {
 }
 function ratioOf(t, best) {
   if (typeof t !== "number" || typeof best !== "number") return null;
-  if (best === 0) return t === 0 ? 1 : Infinity;
-  return t / best;
+  return Math.max(t, RESOLUTION) / Math.max(best, RESOLUTION);
 }
 
 // ---- formatting ------------------------------------------------------------
