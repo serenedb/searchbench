@@ -15,13 +15,11 @@ DROP TEXT SEARCH DICTIONARY IF EXISTS en;
 -- is required for correctness: without it, conjoined multi-term predicates lose
 -- rows ('connmmm cannection' matches levenshtein+starts_with via two different
 -- tokens and must still count once).
-CREATE TEXT SEARCH DICTIONARY en (
-    template  = 'split_by_non_alpha',
-    case      = 'lower',
-    frequency = true,        -- frequency + norm: BM25 scoring (top_k)
-    norm      = true,
-    position  = true         -- phrase queries; enlarges the index
-);
+-- frequency + norm: BM25 scoring (top_k); position: phrase queries (enlarges
+-- the index).
+CREATE TEXT SEARCH DICTIONARY en AS
+    split_by_non_alpha(case := 'lower')
+    WITH (frequency, norm, position);
 
 -- Ingest source only; queries read otel_logs_idx.
 CREATE VIEW otel_logs AS
