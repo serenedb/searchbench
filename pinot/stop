@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Stop all four JVMs. Idempotent; leaves $PINOT_WORK data in place so ./start resumes.
+set -uo pipefail
+cd "$(dirname "$0")"
+source conf/env.sh
+
+# Reverse start order so the server deregisters from Helix before ZK goes away.
+for name in server broker controller zookeeper; do
+    pidfile="$PINOT_WORK/logs/${name}.pid"
+    [[ -f "$pidfile" ]] || continue
+    pid=$(cat "$pidfile")
+    kill "$pid" 2>/dev/null || true
+done
+for i in $(seq 1 60); do
+    pgrep -f "pinot.*StartServer|pinot.*StartBroker|pinot.*StartController|StartZookeeper" >/dev/null 2>&1 || break
+    sleep 1
+done
+pkill -9 -f "HelixServerStarter|StartZookeeper|PinotAdministrator" 2>/dev/null || true
+exit 0

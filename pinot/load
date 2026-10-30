@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Shard the corpus, create schema + table, run the batch ingestion job, and
+# block until every segment is ONLINE (so load_time covers index build + serve).
+set -euo pipefail
+cd "$(dirname "$0")"
+source conf/env.sh
+
+: "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set}"
+: "${SEARCHBENCH_PYTHON:=python3}"
+[[ -d "$SEARCHBENCH_DATA_DIR" ]] || { echo "missing data dir: $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
+
+SHARDS="$PINOT_WORK/shards"
+SEGOUT="$PINOT_WORK/segments"
+rm -rf "$SEGOUT"; mkdir -p "$SEGOUT" "$SHARDS" "$PINOT_TMPDIR"
+
+# Segment count scales with the corpus (see conf/env.sh), never with the machine.
+if [[ -z "${PINOT_SEGMENTS}" ]]; then
+    rows=$("$SEARCHBENCH_PYTHON" shard_parquet.py "$SEARCHBENCH_DATA_DIR" --count)
+    PINOT_SEGMENTS=$(( (rows + PINOT_ROWS_PER_SEGMENT - 1) / PINOT_ROWS_PER_SEGMENT ))
+    (( PINOT_SEGMENTS < PINOT_MIN_SEGMENTS )) && PINOT_SEGMENTS=$PINOT_MIN_SEGMENTS
+    echo "corpus has $rows rows -> $PINOT_SEGMENTS segments (~$PINOT_ROWS_PER_SEGMENT rows each)"
+fi
+
+# Segment BUILD concurrency is bounded by cores, not by segment count: each
+# concurrent build holds a Lucene buffer, so 250-way would exhaust RAM.
+JOBPAR="$PINOT_MIN_SEGMENTS"
+
+echo "==> sharding corpus into $PINOT_SEGMENTS files"
+"$SEARCHBENCH_PYTHON" shard_parquet.py "$SEARCHBENCH_DATA_DIR" "$SHARDS" "$PINOT_SEGMENTS"
+
+echo "==> (re)creating table $PINOT_TABLE"
+curl -fsS -X DELETE "$CONTROLLER/tables/${PINOT_TABLE}?type=offline" >/dev/null 2>&1 || true
+curl -fsS -X DELETE "$CONTROLLER/schemas/${PINOT_TABLE}"            >/dev/null 2>&1 || true
+curl -fsS -X POST -H 'Content-Type: application/json' \
+     --data-binary @conf/schema.json "$CONTROLLER/schemas" >/dev/null
+curl -fsS -X POST -H 'Content-Type: application/json' \
+     --data-binary @conf/table.json  "$CONTROLLER/tables"  >/dev/null
+
+echo "==> ingestion job (build parallelism $JOBPAR)"
+job="$PINOT_WORK/job.yaml"
+sed -e "s|INPUT_DIR|${SHARDS}|" \
+    -e "s|OUTPUT_DIR|${SEGOUT}|" \
+    -e "s|CONTROLLER_URI|${CONTROLLER}|g" \
+    -e "s|PARALLELISM|${JOBPAR}|g" conf/job.yaml > "$job"
+# Keep the whole job log: a build failure's cause is in the stack trace, and
+# piping this to `tail` once cost an hour of diagnosis at 1B scale.
+ingest_log="$PINOT_WORK/ingestion.log"
+if ! JAVA_OPTS="-Xms4G -Xmx${INGEST_XMX:-32G} -Djava.io.tmpdir=${PINOT_TMPDIR} -Dlog4j2.configurationFile=${PINOT_DIST}/conf/log4j2.xml" \
+    "$ADMIN" LaunchDataIngestionJob -jobSpecFile "$job" > "$ingest_log" 2>&1; then
+    echo "ingestion job FAILED; cause follows (full log: $ingest_log)" >&2
+    grep -E "Exception|Caused by|Error" "$ingest_log" | head -20 >&2
+    exit 1
+fi
+tail -3 "$ingest_log"
+
+echo "==> waiting for segments to come ONLINE"
+expected=$(ls "$SHARDS"/*.parquet | wc -l | tr -d ' ')
+deadline=$(( $(date +%s) + ${PINOT_ONLINE_TIMEOUT:-7200} ))
+while :; do
+    online=$(curl -fsS "$CONTROLLER/tables/${PINOT_TABLE}/externalview" 2>/dev/null \
+      | jq '[.OFFLINE // {} | .[] | to_entries[] | select(.value=="ONLINE")] | length' 2>/dev/null || echo 0)
+    [[ "$online" -ge "$expected" ]] && { echo "all $online segments ONLINE"; break; }
+    [[ $(date +%s) -gt $deadline ]] && { echo "timed out with $online/$expected ONLINE" >&2; exit 1; }
+    sleep 5
+done
+rows=$(curl -fsS -X POST -H 'Content-Type: application/json' \
+   -d "{\"sql\":\"SELECT count(*) FROM ${PINOT_TABLE}\"}" "$BROKER/query/sql" \
+   | jq -r '.resultTable.rows[0][0] // 0')
+echo "rows queryable: $rows"
+[[ "$rows" -gt 0 ]] || { echo "load produced no queryable rows" >&2; exit 1; }

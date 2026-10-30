@@ -1,0 +1,11 @@
+{
+  "engine": "Pinot",
+  "dataset": "otel_logs_100m",
+  "build": "",
+  "engine_version": "1.7.0-SNAPSHOT-b58776bca94f1686b501025cd092c3104cc2cf33",
+  "load_time": 345.515,
+  "data_size": 9808510976,
+  "os": "Ubuntu 24.04.5 LTS",
+  "date": "2026-10-29",
+  "loaded_by": "queries.sql"
+}

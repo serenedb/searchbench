@@ -1,0 +1,26 @@
+executionFrameworkSpec:
+  name: standalone
+  segmentGenerationJobRunnerClassName: org.apache.pinot.plugin.ingestion.batch.standalone.SegmentGenerationJobRunner
+  segmentTarPushJobRunnerClassName: org.apache.pinot.plugin.ingestion.batch.standalone.SegmentTarPushJobRunner
+  segmentUriPushJobRunnerClassName: org.apache.pinot.plugin.ingestion.batch.standalone.SegmentUriPushJobRunner
+jobType: SegmentCreationAndTarPush
+inputDirURI: 'INPUT_DIR'
+includeFileNamePattern: 'glob:**/*.parquet'
+outputDirURI: 'OUTPUT_DIR'
+overwriteOutput: true
+segmentCreationJobParallelism: PARALLELISM
+pinotFSSpecs:
+  - scheme: file
+    className: org.apache.pinot.spi.filesystem.LocalPinotFS
+recordReaderSpec:
+  dataFormat: 'parquet'
+  className: 'org.apache.pinot.plugin.inputformat.parquet.ParquetRecordReader'
+tableSpec:
+  tableName: 'otel_logs'
+  schemaURI: 'CONTROLLER_URI/tables/otel_logs/schema'
+  tableConfigURI: 'CONTROLLER_URI/tables/otel_logs'
+pinotClusterSpecs:
+  - controllerURI: 'CONTROLLER_URI'
+pushJobSpec:
+  pushParallelism: PARALLELISM
+  pushAttempts: 2

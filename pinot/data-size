@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# On-disk bytes of the SERVED data + indexes, i.e. what the server actually
+# queries -- the same thing the other adapters report.
+#
+# Deliberately excludes $PINOT_WORK/controller: that is Pinot's deep store, a
+# second durable copy of every segment that no other engine here keeps. Counting
+# it would roughly double the figure for a cost the comparison does not share.
+# ./data-size-deepstore prints it separately.
+set -euo pipefail
+cd "$(dirname "$0")"
+source conf/env.sh
+total=0
+for d in "$PINOT_WORK/server/data" "$PINOT_WORK/server/segment"; do
+    [[ -d "$d" ]] || continue
+    sz=$(du -sk "$d" 2>/dev/null | awk '{print $1}')
+    total=$(( total + sz * 1024 ))
+done
+echo "$total"

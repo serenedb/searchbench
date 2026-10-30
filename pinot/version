@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+source conf/env.sh
+curl -fsS -m 5 "$CONTROLLER/version" 2>/dev/null \
+  | jq -r 'to_entries | map("\(.value)") | .[0] // empty' 2>/dev/null \
+  || echo unknown

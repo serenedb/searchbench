@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Bring up ZK + controller + broker + server as four local JVMs. Idempotent:
+# a reachable broker means we are already up.
+set -euo pipefail
+cd "$(dirname "$0")"
+source conf/env.sh
+
+./check >/dev/null 2>&1 && exit 0
+mkdir -p "$PINOT_WORK"/{zk,controller,server/data,server/segment,logs,tmp} "$PINOT_TMPDIR"
+
+wait_port() {  # wait_port <host:port-url> <label> <tries>
+    local url="$1" label="$2" tries="${3:-120}" i
+    for (( i = 0; i < tries; i++ )); do
+        curl -fsS -m 2 "$url" >/dev/null 2>&1 && return 0
+        sleep 1
+    done
+    echo "$label did not come up: $url" >&2
+    return 1
+}
+
+start_one() {  # start_one <logname> <xmx> <admin args...>
+    local name="$1" xmx="$2"; shift 2
+    JAVA_OPTS="-Xms1G -Xmx${xmx} -Djava.io.tmpdir=${PINOT_TMPDIR} -Dlog4j2.configurationFile=${PINOT_DIST}/conf/log4j2.xml" \
+        nohup "$ADMIN" "$@" > "$PINOT_WORK/logs/${name}.log" 2>&1 &
+    echo $! > "$PINOT_WORK/logs/${name}.pid"
+}
+
+# ZooKeeper has no HTTP probe; poll the TCP port with the four-letter `ruok`.
+zk_up() { (exec 3<>"/dev/tcp/localhost/$ZK_PORT") 2>/dev/null; }
+if ! zk_up; then
+    start_one zookeeper 1G StartZookeeper -zkPort "$ZK_PORT" -dataDir "$PINOT_WORK/zk"
+    for i in $(seq 1 60); do
+        zk_up && break
+        sleep 1
+    done
+fi
+
+start_one controller "$CONTROLLER_XMX" StartController -zkAddress "localhost:$ZK_PORT" \
+    -clusterName "$PINOT_CLUSTER" -controllerPort "$CONTROLLER_PORT" -dataDir "$PINOT_WORK/controller"
+wait_port "$CONTROLLER/health" controller 180
+
+start_one broker "$BROKER_XMX" StartBroker -zkAddress "localhost:$ZK_PORT" \
+    -clusterName "$PINOT_CLUSTER" -brokerPort "$BROKER_PORT"
+wait_port "$BROKER/health" broker 180
+
+start_one server "$SERVER_XMX" StartServer -zkAddress "localhost:$ZK_PORT" \
+    -clusterName "$PINOT_CLUSTER" -serverPort "$SERVER_PORT" -serverAdminPort "$SERVER_ADMIN_PORT" \
+    -dataDir "$PINOT_WORK/server/data" -segmentDir "$PINOT_WORK/server/segment"
+wait_port "http://localhost:${SERVER_ADMIN_PORT}/health" server 180
+
+# Block until the table is fully served. ./start must return ready, because the
+# driver allows ./check only 60s after it -- far less than a large table needs
+# to come ONLINE after a restart.
+for (( i = 0; i < ${PINOT_READY_TIMEOUT:-3600}; i++ )); do
+    ./check >/dev/null 2>&1 && break
+    sleep 1
+done
+
+./check

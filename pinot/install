@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Wipe cluster state so ./load rebuilds from scratch (stale segments would make
+# load_time meaningless).
+set -euo pipefail
+cd "$(dirname "$0")"
+source conf/env.sh
+
+[[ -x "$ADMIN" ]]          || { echo "pinot-admin.sh not found at $ADMIN" >&2; exit 1; }
+[[ -x "$JAVA_HOME/bin/java" ]] || { echo "no JDK at $JAVA_HOME" >&2; exit 1; }
+command -v curl >/dev/null || { echo "curl not on PATH" >&2; exit 1; }
+command -v jq   >/dev/null || { echo "jq not on PATH"   >&2; exit 1; }
+
+echo "Pinot dist: $PINOT_DIST"
+echo "JDK: $("$JAVA_HOME/bin/java" -version 2>&1 | head -1)"
+
+./stop >/dev/null 2>&1 || true
+sleep 2
+rm -rf "$PINOT_WORK"
+mkdir -p "$PINOT_WORK"/{zk,controller,server/data,server/segment,segments,shards,logs,tmp}

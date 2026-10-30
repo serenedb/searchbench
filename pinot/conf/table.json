@@ -1,0 +1,69 @@
+{
+  "tableName": "otel_logs",
+  "tableType": "OFFLINE",
+  "segmentsConfig": {
+    "timeColumnName": "Timestamp",
+    "replication": "1",
+    "schemaName": "otel_logs",
+    "segmentPushType": "APPEND"
+  },
+  "tenants": {},
+  "fieldConfigList": [
+    {
+      "name": "Body",
+      "encodingType": "RAW",
+      "indexTypes": [
+        "TEXT"
+      ],
+      "properties": {
+        "luceneUseCompoundFile": "false",
+        "luceneMaxBufferSizeMB": "512",
+        "enableQueryCache": "false",
+        "luceneAnalyzerClass": "org.apache.lucene.analysis.core.SimpleAnalyzer"
+      }
+    },
+    {
+      "name": "ResourceAttributes",
+      "encodingType": "RAW",
+      "compressionCodec": "ZSTANDARD"
+    },
+    {
+      "name": "ScopeAttributes",
+      "encodingType": "RAW",
+      "compressionCodec": "ZSTANDARD"
+    },
+    {
+      "name": "LogAttributes",
+      "encodingType": "RAW",
+      "compressionCodec": "ZSTANDARD"
+    }
+  ],
+  "tableIndexConfig": {
+    "loadMode": "MMAP",
+    "invertedIndexColumns": [
+      "ServiceName"
+    ],
+    "rangeIndexColumns": [
+      "Timestamp",
+      "SeverityNumber"
+    ],
+    "noDictionaryColumns": [
+      "Body",
+      "SpanId",
+      "ResourceAttributes",
+      "ScopeAttributes",
+      "LogAttributes"
+    ],
+    "createInvertedIndexDuringSegmentGeneration": true,
+    "optimizeNoDictStatsCollection": true
+  },
+  "ingestionConfig": {
+    "transformConfigs": [
+      {
+        "columnName": "Timestamp",
+        "transformFunction": "TimestampTime"
+      }
+    ]
+  },
+  "metadata": {}
+}
