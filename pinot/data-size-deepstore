@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Bytes held in the controller's deep store (the segment copies ./load pushed).
+set -euo pipefail
+cd "$(dirname "$0")"
+source conf/env.sh
+sz=$(du -sk "$PINOT_WORK/controller" 2>/dev/null | awk '{print $1}')
+echo $(( ${sz:-0} * 1024 ))

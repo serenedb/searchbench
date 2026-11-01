@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Exit 0 only when the engine can actually answer the workload.
+#
+# Process health is not enough: after a restart a Pinot server reports healthy
+# while it is still loading segments, and the driver restarts the engine between
+# queries at real scales. Querying then would read a partial table -- wrong
+# answers, and flatteringly fast. So once the table exists, require every
+# segment ONLINE in the external view.
+set -euo pipefail
+cd "$(dirname "$0")"
+source conf/env.sh
+
+curl -fsS -m 5 "$BROKER/health"     >/dev/null
+curl -fsS -m 5 "$CONTROLLER/health" >/dev/null
+
+ev=$(curl -fsS -m 10 "$CONTROLLER/tables/${PINOT_TABLE}/externalview" 2>/dev/null || echo '{}')
+total=$(jq '[.OFFLINE // {} | keys[]] | length' <<<"$ev" 2>/dev/null || echo 0)
+# No table yet (pre-load): health alone is the contract.
+[[ "${total:-0}" -eq 0 ]] && exit 0
+
+online=$(jq '[.OFFLINE // {} | .[] | to_entries[] | select(.value=="ONLINE")] | length' <<<"$ev")
+[[ "$online" -eq "$total" ]]

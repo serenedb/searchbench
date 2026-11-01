@@ -66,3 +66,7 @@ manticore/manticore-data/
 node_modules/
 frontend/.build/
 frontend/results.json.??????
+
+# Pinot adapter: component logs, including log4j2's rotated/compressed ones
+# (**/*.log does not match pinot-all.log.1.gz).
+pinot/logs/

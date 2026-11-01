@@ -1,0 +1,22 @@
+{
+  "schemaName": "otel_logs",
+  "dimensionFieldSpecs": [
+    {"name": "TraceId",            "dataType": "STRING"},
+    {"name": "SpanId",             "dataType": "STRING"},
+    {"name": "TraceFlags",         "dataType": "INT"},
+    {"name": "SeverityText",       "dataType": "STRING"},
+    {"name": "SeverityNumber",     "dataType": "INT"},
+    {"name": "ServiceName",        "dataType": "STRING"},
+    {"name": "Body",               "dataType": "STRING"},
+    {"name": "ResourceSchemaUrl",  "dataType": "STRING"},
+    {"name": "ScopeSchemaUrl",     "dataType": "STRING"},
+    {"name": "ScopeName",          "dataType": "STRING"},
+    {"name": "ScopeVersion",       "dataType": "STRING"},
+    {"name": "ResourceAttributes", "dataType": "JSON"},
+    {"name": "ScopeAttributes",    "dataType": "JSON"},
+    {"name": "LogAttributes",      "dataType": "JSON"}
+  ],
+  "dateTimeFieldSpecs": [
+    {"name": "Timestamp", "dataType": "TIMESTAMP", "format": "1:MILLISECONDS:EPOCH", "granularity": "1:MILLISECONDS"}
+  ]
+}

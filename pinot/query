@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# One SQL query on stdin -> rows on stdout; elapsed seconds as the LAST stderr
+# line (curl %{time_total}, i.e. client round-trip, same basis as the other
+# adapters).
+#
+# Engine selection mirrors how Pinot is actually used: the single-stage engine
+# serves scan/filter/aggregate, and only joins go to the multi-stage engine,
+# whose shuffle is pure overhead for everything else.
+set -euo pipefail
+cd "$(dirname "$0")"
+source conf/env.sh
+
+sql=$(cat)
+
+# Pinot's defaults silently truncate or reject this workload, so the adapter raises them:
+#   numGroupsLimit  100,000 -> a DISTINCT / GROUP BY over more distinct values than this returns a
+#                   WRONG answer with HTTP 200 and no exception, flagged only in a numGroupsLimitReached
+#                   field. On 100M rows `SELECT DISTINCT TraceId ...` returned 100,000 for a true 1,337,391.
+#   maxRowsInJoin   1,048,576 -> every self-join on TraceId at log scale fails outright.
+#   timeoutMs       10,000 -> the joins need longer than that at 1B.
+#
+# Two more, both plain OSS query options (CommonConstants.QueryOptionKey), both measured on this
+# workload at 1B on a 32-core box:
+#   maxExecutionThreads  CombinePlanNode fans segment scans across threads, but the default ceiling
+#                   is max(1, min(10, availableProcessors() / 2)) -- 10 on any box with 20+ cores,
+#                   not the core count. The per-query option bypasses it while the server-level
+#                   max.execution.threads stays at its -1 default. Worth 1.51x geomean on the
+#                   non-join queries (up to 2.1x on text-heavy counts). NOT set for joins: with
+#                   stageParallelism each worker runs its own leaf, so raising this only
+#                   oversubscribes (measured 0.97x at 32, 0.95x at 64).
+#   stageParallelism  WorkerManager defaults it to 1, so on a single server the whole join stage is
+#                   ONE worker. 8 measured fastest; 32 and 64 are worse.
+# timeoutMs: Pinot's broker timeout defaults to 10s (CommonConstants.DEFAULT_BROKER_TIMEOUT_MS),
+# far under the driver's ceiling, and it applied to every non-join query. A cold query that crossed
+# 10s came back as broker error 427 "servers not responded", which the driver records as null -- a
+# measurement silently dropped rather than shown as a timeout. At 10B this hit exactly Q14 and Q15,
+# whose cold runs measure 10.073s and 10.102s: 73ms and 102ms past the default. Track the driver's
+# ceiling plus its 10s SIGKILL grace, so the driver's `timeout` is always what stops a slow query
+# and the cell renders as capped rather than vanishing.
+_cap=${SEARCHBENCH_QUERY_TIMEOUT:-60}
+if [[ ${SEARCHBENCH_COLD_TIMEOUT:-0} -gt $_cap ]]; then _cap=$SEARCHBENCH_COLD_TIMEOUT; fi
+_timeout_ms=$(( (_cap + 10) * 1000 ))
+opts="timeoutMs=${_timeout_ms};numGroupsLimit=50000000;maxExecutionThreads=${SEARCHBENCH_MAX_EXEC_THREADS:-32}"
+[[ "$sql" == *" JOIN "* ]] \
+  && opts="useMultistageEngine=true;numGroupsLimit=50000000;maxRowsInJoin=200000000;timeoutMs=600000;stageParallelism=${SEARCHBENCH_STAGE_PARALLELISM:-8}"
+body=$(jq -nc --arg q "$sql" --arg o "$opts" \
+        'if $o == "" then {sql:$q} else {sql:$q, queryOptions:$o} end')
+out=$(mktemp); trap 'rm -f "$out"' EXIT
+
+t=$(curl -sS -o "$out" -w '%{time_total}' -m 300 \
+      -X POST -H 'Content-Type: application/json' -d "$body" "$BROKER/query/sql")
+
+# A Pinot error comes back HTTP 200 with an exceptions[] payload; surface it.
+if jq -e '(.exceptions // []) | length > 0' "$out" >/dev/null 2>&1; then
+    jq -r '.exceptions[] | "\(.errorCode): \(.message)"' "$out" | head -3 | cut -c1-300 >&2
+    exit 1
+fi
+if [[ "$(jq -r '.numGroupsLimitReached // false' "$out")" == "true" ]]; then
+    echo "numGroupsLimitReached=true: result is TRUNCATED and wrong" >&2
+    exit 1
+fi
+jq -r '.resultTable.rows[]? | @tsv' "$out"
+printf 'SEARCHBENCH_ROWS=%s\n' "$(jq -r '(.resultTable.rows // []) | length' "$out")" >&2
+printf '%s\n' "$t" >&2
