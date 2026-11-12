@@ -24,6 +24,10 @@ identity-mounted read-only so `create.sql`'s `read_parquet` resolves inside it.
 
 ## Version history
 
+Measured on `otel_logs_100m` (100M rows). The load records of every scale are
+in [`results/load/`](results/load): `otel_logs_1b` is about 10x the load time
+and the size on disk.
+
 | version | measured | 92/92 hot | load | on disk |
 |---|---|---:|---:|---:|
 | 26.07.5 | 2026-07-29 | 3.26s | 49.8s | 11.23G |
