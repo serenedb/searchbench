@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 : "${QW_DATA_DIR:=${PWD}/qw-data}"
-: "${QW_IMAGE:=quickwit/quickwit:0.9.0}"
+: "${QW_IMAGE:=quickwit/quickwit:edge@sha256:34b9552eb09fa85785f529d888ed2a64df68d3e2241213710b74accf4023e8ff}"
 die() { echo "ERROR: $*" >&2; exit 1; }
 for t in curl python3; do command -v "$t" >/dev/null || die "required tool not on PATH: $t"; done
 for m in pyarrow orjson requests; do
@@ -11,7 +11,30 @@ done
 command -v docker >/dev/null || die "docker not on PATH"
 docker info >/dev/null 2>&1 || die "docker daemon not responding"
 echo "Quickwit backend: docker ($QW_IMAGE)"
-docker pull --quiet "$QW_IMAGE" >/dev/null
+# A locally built image (e.g. a main build) has no registry to pull from.
+case "${QW_PULL_IMAGE:-auto}" in
+    auto) docker image inspect "$QW_IMAGE" >/dev/null 2>&1 || docker pull --quiet "$QW_IMAGE" >/dev/null ;;
+    yes) docker pull --quiet "$QW_IMAGE" >/dev/null ;;
+    no) docker image inspect "$QW_IMAGE" >/dev/null || die "local image not found: $QW_IMAGE" ;;
+    *) die "QW_PULL_IMAGE must be auto, yes or no" ;;
+esac
+# Build outside load/CPU timing. The parquet bulk-ingest path does not use this client.
+if [[ "${QW_INGEST:-http}" != parquet && "${SEARCHBENCH_LOAD_CLIENT:-python}" == rust ]]; then
+    if [[ -z "${QW_CLIENT_BIN:-}" ]]; then ./client/build.sh; fi
+    [[ -x "${QW_CLIENT_BIN:-$PWD/client/target/release/qw-parquet-ingest}" ]] || die "Rust client is not executable"
+fi
 mkdir -p "$QW_DATA_DIR"; chmod -R a+rwX "$QW_DATA_DIR" 2>/dev/null || true
+rm -f "$QW_DATA_DIR/.searchbench-loaded"   # ./start: all services until ./load finishes
+if [[ "${QW_STORAGE:-local}" == s3 ]]; then
+    : "${QW_S3_ROOT:?QW_STORAGE=s3 needs QW_S3_ROOT}"
+    command -v aws >/dev/null || die "aws cli not on PATH (needed for ./data-size in s3 mode)"
+    # A fresh --index run starts from an empty prefix: ./load deletes the index
+    # through the API, but splits orphaned by an interrupted run would otherwise
+    # be counted by ./data-size. Guarded so a typo cannot empty a whole bucket.
+    [[ "$QW_S3_ROOT" == s3://*/searchbench/* ]] || die "refusing to wipe $QW_S3_ROOT (must match s3://*/searchbench/*)"
+    ./stop || true
+    echo "wiping ${QW_S3_ROOT}/"
+    aws s3 rm --recursive --only-show-errors "${QW_S3_ROOT}/"
+fi
 echo "QW_DATA_DIR: $QW_DATA_DIR"
 echo "Adapter ready. Run ./start to launch."

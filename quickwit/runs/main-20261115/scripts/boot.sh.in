@@ -1,0 +1,29 @@
+#cloud-boothook
+#!/bin/bash
+set -eu
+# Runs early; no network/package dependency. Absolute deadline fixed before RunInstances.
+# Never synchronous enable --now / shutdown / logind calls here: --no-block only.
+mkdir -p /srv/qw/evidence /etc/systemd/system
+cat > /etc/systemd/system/qw-deadline.service <<'EOF'
+[Unit]
+Description=Quickwit main bench absolute stop deadline
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/shutdown -h now
+EOF
+cat > /etc/systemd/system/qw-deadline.timer <<'EOF'
+[Unit]
+Description=Quickwit main bench nonextendable deadline
+[Timer]
+OnCalendar=@OS_DEADLINE@ UTC
+Persistent=true
+AccuracySec=1s
+Unit=qw-deadline.service
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable qw-deadline.timer
+systemctl --no-block start qw-deadline.timer
+systemctl list-timers --all > /srv/qw/evidence/early-boot-timers.txt
+mkdir -p /var/log/journal

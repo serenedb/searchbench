@@ -6,6 +6,7 @@
   "dynamic_mapping": {
    "indexed": false,
    "stored": true,
+   "fast": false,
    "expand_dots": true
   },
   "field_mappings": [
@@ -18,7 +19,7 @@
     ],
     "fast_precision": "milliseconds",
     "fast": true,
-    "indexed": true
+    "indexed": false
    },
    {
     "name": "Body",
@@ -41,7 +42,7 @@
    {
     "name": "ScopeName",
     "type": "text",
-    "tokenizer": "raw",
+    "indexed": false,
     "fast": true
    },
    {
@@ -52,12 +53,12 @@
    {
     "name": "TraceId",
     "type": "text",
-    "tokenizer": "raw"
+    "indexed": false
    },
    {
     "name": "SpanId",
     "type": "text",
-    "tokenizer": "raw"
+    "indexed": false
    }
   ],
   "timestamp_field": "Timestamp"

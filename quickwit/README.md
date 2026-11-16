@@ -1,304 +1,258 @@
 # Quickwit adapter
 
-[Quickwit](https://quickwit.io) 0.9.0, queried through its
-**Elasticsearch-compatible API** at `/api/v1/_elastic`.
+[Quickwit](https://quickwit.io), queried through its Elasticsearch-compatible API
+(`/api/v1/_elastic`) and loaded through the native ingest API
+(`/api/v1/<index>/ingest`).
+
+The default image is a pinned build of Quickwit main:
 
 ```
-./benchmark.sh --index      # load + run
-./benchmark.sh              # query-only
+quickwit/quickwit:edge@sha256:34b9552eb09fa85785f529d888ed2a64df68d3e2241213710b74accf4023e8ff
 ```
 
-## ⚠ Ingest v2 silently drops documents under concurrency
+It was built on 2026-11-09 from commit `961c8718dc19e6eb3948b1eae98d6a3f1b9e455b`
+for linux/amd64 and linux/arm64, and reports `0.9.3-nightly (961c871)`. Main is
+needed for document clustering, in-memory indexing and the timestamp
+split-pruning fix (#6865, #6966), none of which are in a 0.9.x release. Set
+`QW_IMAGE` to run another build.
 
-**This is the most serious defect found in any engine in this batch, and it is
-invisible to the client.** Every dropped batch returns `HTTP 200` with
-`"errors": false` and no per-item error. The only signal is a line in the
-*server* log, and even that does not appear in every case.
+## Results
 
-Measured on `otel_logs_1m`, identical data, identical index config, varying only
-the number of concurrent bulk requests:
+| Column | Files | Run |
+|---|---|---|
+| **Quickwit (main-local)** | `results/quickwit_main-local_<dataset>.json` | Quickwit main `961c871`, 2026-11-15, AWS `m8g.4xlarge` (16 cores, 64 GiB), index on a 3,000 GiB gp3 volume (20k IOPS, 625 MiB/s). Median of 3 rounds. |
+| **Quickwit (main-s3)** | `results/quickwit_main-s3_<dataset>.json` | Same build, settings and machine type, with the index and metastore on S3. Median of 3 rounds. |
+| Quickwit | `results/quickwit_otel_logs_{100m,1b}.json` | Quickwit 0.9.0, 2026-09-20, GCP `n2-standard-32` with `pd-ssd`, with the adapter settings of that time. |
 
-| concurrent requests | indexed | lost | notes |
-|---:|---:|---:|---|
-| 1 | 1,000,000 | — | lossless, 14,923 docs/s |
-| 4 | 858,000 | **14.2%** | permanent; count unchanged after 160s |
-| 4 (32GiB ingest queue) | 830,000 | **17.0%** | and **zero** "failed to fetch" errors |
-| 4 (sub-1MB batches) | 864,200 | **13.6%** | |
-| 16 | 896,000 | **10.4%** | 7 × "failed to fetch records from ingester" |
+[`runs/main-20261115/`](runs/main-20261115/README.md) has the method, the
+per-round evidence and the scripts of the main runs.
 
-The loss is **permanent**, not a commit lag: the count was still 858,000 after
-160 seconds of polling, and the settle curve for a healthy load is visible and
-short (975,311 → 998,400 → 1,000,000 over 45s).
+The 0.9.0 `data_size` is not comparable with the main runs. It is `du` of the
+whole data dir, which also counts the WAL, the ingest queues, the indexer split
+cache and merged-away splits. The main runs report the bytes of the published
+splits.
 
-### What causes it
+## Usage
 
-The server prints the real constraint at startup:
-
+```bash
+./benchmark.sh --index      # create the index, load the corpus, run the queries
+./benchmark.sh              # queries only, on the existing index
+QW_STORAGE=s3 QW_S3_ROOT=s3://<bucket>/searchbench/<host> ./benchmark.sh --index
 ```
-INFO quickwit_config::node_config: ingestion shard throughput limit: 5.2 MB
-```
 
-Ingest v2 distributes documents into WAL shards, each rate-limited. Exceed the
-limit and Quickwit **discards the excess instead of applying backpressure or
-returning an error**.
+`QW_STORAGE=s3` uses `config/quickwit_s3.yaml`: the index and a file-backed
+metastore live under `QW_S3_ROOT`, and the local data dir keeps only the ingest
+WAL and the indexer's split store. `./install` empties `QW_S3_ROOT` and refuses
+any URI that does not match `s3://*/searchbench/*`.
 
-> **Correction (2026-09-12, 0.9.0).** This section previously said no
-> shard-throughput setting is exposed. That is wrong: `ingest_api.shard_throughput_limit`
-> exists. Default 5.2 MB, maximum 20mb — the validator rejects anything higher
-> with `must be within 1mb and 20mb`. Raising it to 20mb is a genuine 3.7–6.7x
-> on ingest throughput. It does **not** fix the loss; see below.
+Settings take effect on a new index (`--index`). Use a new `--version` label for
+each configuration so earlier results are not overwritten.
 
-### What does not fix it
+## Configuration
 
-- **A bigger ingest queue.** Raising `ingest_api.max_queue_memory_usage` from
-  2GiB to 32GiB made it *worse* (830,000) and eliminated the
-  "failed to fetch records" errors entirely — proving the queue was never the
-  bottleneck. Those settings are still in `config/quickwit.yaml`, which `./start`
-  mounts, because they are what the published numbers were measured under — not
-  because they help. They are irrelevant to the serial ingest that is actually
-  used.
-- **Sub-1MB batches.** The community workaround for ingest-v2 stalls
-  ([Journey to v9](https://github.com/quickwit-oss/quickwit/discussions/5961)
-  reports that cutting messages below 1MB resolved indexing stalls) does not
-  apply here: 700-document batches at ~0.9MB still lost 13.6%.
-- **`?refresh=wait_for` on the bulk endpoint.** Accepted (HTTP 200) but has no
-  effect on the loss.
+The published main runs used the settings below at every scale. The values in
+the "Published runs" column are set from the run environment
+(`runs/main-20261115/scripts/remote.env`); the adapter defaults differ where
+noted.
 
-### Raising the shard limit: faster, still lossy
+### Index and ingest
 
-Measured on `otel_logs_100m`, same corpus and index config, varying the ceiling
-and the number of ingest processes:
+| Setting | Published runs | Adapter default | Variable |
+|---|---|---|---|
+| Ingest client | Rust client, 16 processes, 2,000 docs/request | Python `ingest.py`, 16 processes | `SEARCHBENCH_LOAD_CLIENT=rust`, `SEARCHBENCH_LOAD_PROCESSES` |
+| Minimum ingest shards (`min_shards`) | 48 | server default | `QW_MIN_SHARDS` |
+| `shard_throughput_limit` | 20mb (the maximum the server accepts) | server default, 5 MiB | `QW_SHARD_THROUGHPUT_LIMIT` |
+| Ingest queue | 32 GiB memory, 80 GiB disk | 32 GiB, 64 GiB | `QW_INGEST_QUEUE_MEMORY`, `QW_INGEST_QUEUE_DISK` |
+| `commit_timeout_secs` | 30 | 30 | `QW_COMMIT_TIMEOUT_SECS` |
+| `split_num_docs_target` | 10M | server default, 10M | `QW_SPLIT_NUM_DOCS` |
+| Merge policy | `stable_log` with Quickwit's defaults | server default | `QW_MERGE_POLICY` |
+| Document validation | off (index and server) | on | `QW_VALIDATE_DOCS=off` |
+| In-memory indexing | on | on | `QW_ENABLE_IN_MEMORY_INDEXING` |
+| Document clustering | on | on | `QW_CLUSTERING` |
 
-| processes | shard limit | rate | ≈ MB/s | indexed | lost |
-|---:|---:|---:|---:|---:|---:|
-| 1 | 5.2 MB (default) | 16,528/s | ~5 | 99,988,000 | 12,000 (0.012%) |
-| 4 | 20mb | 61,660/s | ~18.5 | 99,718,000 | 282,000 (0.28%) |
-| 8 | 20mb | 110,526/s | ~33 | 98,682,000 | 1,318,000 (1.32%) |
+- **Shards.** `min_shards` is a minimum: the ingest API opens that many shards
+  from the start instead of scaling up under load. It is independent of the
+  number of client processes.
+- **Merge policy.** Quickwit's `stable_log` defaults are `min_level_num_docs`
+  100,000, `merge_factor` 10, `max_merge_factor` 12 and `maturation_period`
+  48 h.
+- **Document validation.** `QW_VALIDATE_DOCS=off` sets
+  `ingest_settings.validate_docs: false` in the index and
+  `QW_DISABLE_DOCUMENT_VALIDATION=true` on the server. Documents are still
+  parsed by the indexing pipeline.
+- **In-memory indexing** keeps the temporary indexing files of an in-progress
+  split in RAM and writes them to disk when the split is finalized. It does not
+  keep the published index in RAM, and it does not skip the WAL, the merges or
+  the final storage writes. Quickwit reads the variable once at startup, so
+  `./start` recreates the container when it changes. It raised ingest throughput
+  by about 21% at 100M, and raised peak engine memory from 19.5 to 32.9 GiB on a
+  64 GiB machine.
+- **Document clustering** is a node-level setting (`docs_clustering` in the node
+  config). Documents in each fresh split are ordered by key structure, then
+  `ServiceName`, then `SeverityText`, then the token pattern of `Body`. Merges
+  keep that order. It changes only the document order, so query results are
+  unchanged. `QW_CLUSTERING=off` sets `QW_DISABLE_DOCS_CLUSTERING=true` for the
+  unclustered baseline.
 
-Two things this shows that the concurrency table above does not:
+`config/dataset-defaults.sh` adds a preset for `otel_logs_100m` (1M-document
+splits, 64 shards, validation off, explicit `stable_log`). The published 100M
+runs did not use it; they set the values above explicitly. Any non-empty `QW_*`
+variable takes precedence over the preset.
 
-1. **Exceeding the configured limit is not the mechanism.** The 4-process run
-   sat at ~18.5 MB/s, *under* its 20mb ceiling, and still lost 0.28%. Loss
-   grows superlinearly with throughput regardless of headroom — 3.7x the rate
-   cost 23x the documents; 6.7x the rate cost 110x.
-2. **Serial ingest is not lossless either.** The row above contradicts the
-   "1 concurrent request → lossless" line in the earlier table: at 100m scale,
-   one process lost 12,000 documents. And it is not deterministic — the 1b load
-   at that same rate returned exactly 1,000,000,000.
+### Index mapping
 
-So there is no configuration verified to load this corpus completely through
-the ES-compatible bulk API. `shard_throughput_limit` is left commented out in
-`config/quickwit.yaml`: it trades correctness for speed, and no clean load was
-ever produced with it.
+`config/index_config.json` indexes only what the queries use:
 
-### What partially fixes it
+| Field | Indexed | Fast | Notes |
+|---|---|---|---|
+| `Body` | yes, with positions | no | `default` tokenizer; phrase queries need the positions |
+| `ServiceName`, `SeverityText` | yes | yes | `raw` tokenizer |
+| `SeverityNumber` | yes | yes | |
+| `ScopeName` | no | yes | used only in terms aggregations |
+| `Timestamp` | no | yes, millisecond precision | ranges, sorts and histograms run on the fast field; split pruning uses each split's time range from the metastore |
+| `TraceId`, `SpanId`, dynamic fields | no | no | stored, so documents are returned whole |
 
-**Serial ingest — one connection.** `ingest.py` therefore defaults to
-`--processes 1 --bulk-workers 1`. That still does ~15k docs/s, which is faster
-than Meilisearch and far faster than Typesense, so the cost is modest.
+`ingest.py` and the Rust client send timestamps as epoch milliseconds.
+`lib/check_recent.py` compares each engine at the precision it returns.
 
-The native `/api/v1/<index>/ingest?commit=wait_for` endpoint *does* apply real
-backpressure and is lossless, but collapses throughput to roughly 16,000
-documents in five minutes (~50× slower) — unusable at this scale.
+### Caches
 
-### Why `./load` counts afterwards
+The driver restarts the engine and drops the OS page cache before every query.
+Try 1 (cold) therefore starts with every in-memory cache empty. Tries 2 and 3
+(hot) run against the same process, so whatever try 1 put in a cache can be
+reused.
 
-Because the response cannot be trusted, `./load` compares the final indexed
-count against the parquet row count and **fails loudly** on a mismatch rather
-than benchmarking a partial corpus. Any adapter for this engine needs that
-check; without it a 14% shortfall looks exactly like a successful load.
+| Searcher cache | Quickwit default | Here | What it holds |
+|---|---|---|---|
+| `partial_request_cache_capacity` | 64 MB | **0** | Leaf search *results*, keyed on the query |
+| `predicate_cache_capacity` | 256 MB | **0** | Per-split filter hit sets, keyed on the query |
+| `fast_field_cache_capacity` | 1 GB | **0** | Decoded fast-field (columnar) data |
+| `split_footer_cache_capacity` | 500 MB | default | Split footers and hotcaches (split metadata; about 33 MB for the whole 1B index) |
+| `split_cache` | not set | not set | Local disk copy of whole splits downloaded from object storage |
 
-This is consistent with publicly reported ingest-v2 problems — dropped
-documents, indexing stalls, and throughput regressions against v1, with users
-reporting they *"could not reach even half the throughput they had with
-ingest_v1"* — see
-[ingest-v2 internals](https://github.com/quickwit-oss/quickwit/blob/main/docs/internals/ingest-v2.md).
+- **Result caches must be off.** With the partial request cache at its default,
+  hot tries return a stored result instead of running the query: a nested terms
+  aggregation over 11.7M documents went from 115 ms to 2 ms, and the whole suite
+  read 10× faster than it executes. The predicate cache has the same effect on
+  count, group-by and recent queries. They are the equivalent of the
+  Elasticsearch request and query caches, which the `elastic/` and
+  `opensearch/` adapters also disable.
+- **The fast field cache is off** so that hot tries read the columns through
+  storage rather than from decoded data kept in the process.
+  `QW_FAST_FIELD_CACHE` (for example `16GiB`) re-enables it.
+- **The split footer cache stays on.** It holds split metadata only, the
+  analogue of ClickHouse's mark cache, which stays on in the ClickHouse adapter.
+- **No split cache.** On S3, every try reads the splits from S3; only the split
+  footers are cached between tries. On local disk, hot tries also benefit from
+  the OS page cache, which the driver drops only before try 1.
 
-## Query coverage — 77 of 92, the best in this batch
+`request_timeout_secs` and `leaf_request_timeout_secs` are 300, so the
+driver's 60 s cap, not Quickwit's 30 s defaults, decides when a cold try is too
+slow. On a single node the leaf timeout covers the whole query: the published
+local 10B run had it at the default, and 7 cold tries ended at 30 s (see the run
+notes).
 
-Quickwit speaks the ES query DSL, so `queries.dsl` is
-`../elastic/queries.dsl` with **three constructs rewritten**, not a translation
-into another language. 45 of the 92 run byte-identical to the ES file.
+`config/quickwit.yaml` and `config/quickwit_s3.yaml` differ only in where the
+data lives. Keep them in sync.
 
-| rewritten | why |
+## Load
+
+`./load` recreates the index and ingests the corpus through
+`/api/v1/<index>/ingest`. It then waits until all the documents are searchable,
+merges have settled, and the published split set has been unchanged for
+`QW_MERGE_QUIET_SECS` (180 s; 45 s on smoke scales). The wait is part of
+`load_time`.
+
+- **Count check.** The load fails if the final document count differs from the
+  parquet row count. The ingest response alone is not proof that every document
+  landed. Do not point the loader at the `/api/v1/_elastic/_bulk` endpoint: the
+  0.9.0 runs lost documents under concurrent load through it, while the native
+  ingest API indexed every document at 16 processes.
+- **Commits are on a timer.** Documents become searchable up to
+  `commit_timeout_secs` after their request returns, so the count is polled
+  until it matches.
+- **Request size.** The node config raises `content_length_limit` to 32 MiB.
+  2,000 documents of this corpus are about 2.5 MB.
+- **Rust client** (`client/`). `./install` builds it with `--locked` before any
+  timed phase, or checks a supplied `QW_CLIENT_BIN`. `QW_CLIENT_BUILD=auto|native|docker`
+  picks the builder. Retries are bounded (`SEARCHBENCH_LOAD_MAX_RETRIES`, 8;
+  `SEARCHBENCH_LOAD_REQUEST_TIMEOUT`, 60 s), and a fatal worker error stops the
+  other workers.
+- `QW_INGEST=parquet` loads with Quickwit's parquet bulk CLI
+  (`quickwit tool local-ingest`), on builds that have it. The published runs
+  used the ingest API.
+
+## Queries
+
+- **Searcher-only node.** After a load, `./start` runs the node with
+  `QW_ENABLED_SERVICES=searcher,metastore`. An all-in-one node waits 15 s on
+  shutdown for its ingester, which the per-query restarts would add 77 times per
+  round. Results are identical.
+- **Storage requests per query** (opt-in). With `SEARCHBENCH_QW_METRICS_LOG=<file>`,
+  `./query` appends one JSON line per try with the object-storage GETs and the
+  bytes downloaded during that try, read from `/metrics`.
+
+### Coverage: 77 of 92
+
+`queries.dsl` is the Elasticsearch query file with two constructs rewritten:
+
+| Rewritten | Why |
 |---|---|
-| `match` object form (`operator`, `minimum_should_match`) | HTTP 400 → expanded to a `bool` over single-term `match` clauses |
-| `date_histogram` `calendar_interval` | HTTP 500 → `fixed_interval` (minute → 60s). The corpus has no DST or leap seconds, so the buckets coincide |
+| `match` object form (`operator`, `minimum_should_match`) | HTTP 400; expanded into a `bool` over single-term `match` clauses |
+| `date_histogram` with `calendar_interval` | HTTP 500; replaced by `fixed_interval` (one minute = 60 s). The corpus has no DST change or leap second, so the buckets are the same |
 
-| unsupported | why |
+| Unsupported | Why |
 |---|---|
-| 9 (Q84–Q92) | no join |
-| 6 (Q22–Q24, Q48, Q49, Q59) | **fuzzy** — verified absent on *both* APIs: `{"fuzzy":…}` → 400, `match`+`fuzziness` → 400, `query_string "term~1"` → 0 hits, native `Body:term~1` → 0 hits. `term~` returns the exact-match count only, so `~` is parsed and ignored |
+| Q84–Q92 (9) | joins |
+| Q22–Q24, Q48, Q49, Q59 (6) | fuzzy matching: `fuzzy` and `match` with `fuzziness` return HTTP 400, and `term~1` in a query string matches the exact term only |
 
-Compare: Typesense 74, RavenDB 71, Meilisearch 69, VictoriaLogs 57.
+Q67 is a nested aggregation here (the top 100 severities, then the top 20 scopes
+of each), while the SQL adapters use a flat `GROUP BY (SeverityText, ScopeName)
+LIMIT 20` and some adapters group by severity only. The shapes return the same 7
+pairs on this corpus only because it has 5 severities and 7 distinct pairs.
 
-### Q67 is not equivalent across engines
+## Correctness
 
-Q67 is a **nested** aggregation here (top-100 severities, then each one's top-20
-scopes), but a **flat** `GROUP BY (SeverityText, ScopeName) ... LIMIT 20` in the
-SQL adapters, and single-key `GROUP BY SeverityText` in cratedb, victorialogs,
-ravendb, surrealdb, meilisearch and typesense — which drop the ScopeName
-dimension entirely. These compute different things: the flat form can be
-swallowed by the largest severity while rare severities vanish, whereas the
-nested form guarantees each severity its own top-20.
-
-They coincide on this corpus only because cardinality is tiny (5 severities, 7
-distinct pairs), so all three shapes return the same 7 pairs. That is luck, not
-equivalence, and it would break on a corpus with more scopes. Q60 and Q66 differ
-more mildly: `terms size:100` caps and orders by count, while the SQL forms have
-no `LIMIT` (and Q60 no `ORDER BY`).
-
-Quickwit needs **no workarounds** for `regexp`, `wildcard` (infix *and* suffix),
-`prefix` with many expansions, `minimum_should_match`, or `must_not` — every
-other engine in this batch needed a rewrite, an approximation, or an exclusion
-for at least one of those. It is also the only one that can express
-`date_histogram`.
-
-## Results at 100m
-
-| | |
-|---|---|
-| load | 6747s (1.9h), 14,731 docs/s — no degradation from 1M's 14,923 |
-| on disk | 22.7 GB |
-| queries | 77/92 ran, **3.63s total hot**, 0 timeouts |
-| by task | count 1.61s/29 · group_by 0.39s/13 · top_k 1.22s/19 · recent 0.40s/16 |
-| memory | flat ~1.5 GiB throughout |
-
-## ⚠ The result cache must be disabled or the numbers are meaningless
-
-`searcher.partial_request_cache_capacity` (default **64M**) caches whole
-aggregation and search *results*, keyed on the exact query body. The driver runs
-each query three times and reports `min(try2, try3)`, so with the cache on
-**every reported number is a cache lookup, not a query**.
-
-Measured on Q67 (nested terms aggregation over 11.7M matching docs):
-
-| | |
-|---|---|
-| first execution | 115ms |
-| every execution after | **2ms** |
-| same query, `should` clauses reordered | 29ms, then 2ms |
-| same query, `size` 100 → 99 | 42ms, then 2ms |
-| cache disabled | 26–47ms, stable |
-
-2ms for aggregating 11.7M documents is 5.8 billion docs/sec — the giveaway that
-no work was being done.
-
-Suite-wide the cache inflated Quickwit by **10.2×**: 0.40s reported vs 3.63s
-real, with a cold/hot ratio of 10.2x against 1.2x for an engine with no such
-cache. `count` queries were the worst hit at 26x (1.84s cold → 0.07s hot).
-With the cache off the ratio is 1.1x, as expected.
-
-`config/quickwit.yaml` therefore sets `partial_request_cache_capacity: 0`. Any
-comparison against engines that do not cache results is invalid without it.
-
-**Quickwit is the only engine in this suite found to have such a cache.** An
-earlier version of this note claimed Elasticsearch (1.7x), OpenSearch (3.0x) and
-Elasticsearch-columnar ES|QL (3.3x) shared the signature and needed
-`?request_cache=false`. That was wrong: all three already set
-`index.requests.cache.enable=false` and `index.queries.cache.enabled=false` in
-`config/index_mapping.json`, and re-running OpenSearch at 1b with the parameter
-changed no timing beyond run-to-run noise. Their residual cold/hot ratios are OS
-page cache and JVM warm-up -- the query executes every time -- which is a
-different thing from a cache that returns a precomputed result without doing the
-work.
-
-An earlier recording measured 0.52s; it both used the cache and overlapped a
-concurrent Typesense load. Discarded.
-
-## Verified against ground truth
-
-**All 77 runnable queries are verified, not a sample.** Row counts agreeing is
-not evidence — a `size: 100` cap makes every hit-returning query return exactly
-100 rows whether the underlying match set is right or wrong. Each query shape is
-therefore checked differently:
-
-| shape | n | method | result |
-|---|---:|---|---|
-| count | 29 | exact integer vs Elasticsearch | all identical |
-| group_by | 13 | every bucket key **and** doc_count vs ES | all identical |
-| top_k / recent | 35 | full match total (`size:0`, `track_total_hits`) — 18 share a predicate with an already-verified count query, 17 checked against parquet ground truth | all identical |
-| returned docs | 3,500 | every returned document re-evaluated against its own predicate | 0 false positives |
-| sorted queries | 8 | top-100 timestamp window vs ES | all identical |
-
-**Counts are exact, not estimated.** `hits.total.relation` is `eq` (not `gte`),
-and the terms aggregation reports `doc_count_error_upper_bound: 0` with
-`sum_other_doc_count: 0`; its buckets sum to exactly 100,000,000. This matters
-because Tantivy's terms aggregation is approximate in the general case — it does
-not bite here only because the corpus has 17 services, well inside the exact
-regime. A high-cardinality grouping field would need `shard_size` scrutiny.
-
-The 19 `_score`-sorted top_k queries are compared by match total only: Tantivy
-and Lucene compute BM25 differently, so which 100 documents tie into the page is
-a legitimate engine difference, not an error.
-
-The 10 predicates without a verified twin were recomputed from the 100m parquet
-in a single vectorised pass, and every one matched Quickwit exactly:
-
-| predicate | Quickwit | truth |
-|---|---:|---:|
-| `charge` | 7,301,803 | 7,301,803 |
-| `connection` | 1,340,416 | 1,340,416 |
-| charge + payment + 6h | 1,831,881 | 1,831,881 |
-| failed + order + checkout + 30m | 123,480 | 123,480 |
-| (error\|failed\|charge) + sev≥13 + 30m | 7,039,396 | 7,039,396 |
-| phrase "failed to place order" + 6h | 2,664,716 | 2,664,716 |
-| charge + payment + 30m | 1,831,881 | 1,831,881 |
-| cart + 30m | 44,161,325 | 44,161,325 |
-| `regexp charg.*` + 6h | 7,301,803 | 7,301,803 |
-| (connection\|request\|conversion) + 30m | 5,066,633 | 5,066,633 |
-
-`regexp charg.*` returning exactly the `charge` count looks like a bug and is
-not: the parquet confirms no other `charg`-prefixed token occurs in the corpus.
-
-Additionally, 15 probes at 1m scale, computed from the parquet with the
-reference analyzer (lowercase, split on non-alphanumerics):
-
-| case | Quickwit | truth |
-|---|---:|---:|
-| term `error` | 101,481 | 101,481 |
-| term `cache` | 57,206 | 57,206 |
-| underscore: `order` | 65,611 | 65,611 |
-| AND `failed`+`order` | 62,029 | 62,029 |
-| OR `error`\|`failed` | 137,116 | 137,116 |
-| ≥2 of 4 (`minimum_should_match`) | 93,367 | 93,367 |
-| phrase | 31,323 | 31,323 |
-| prefix `ord*` | 68,706 | 68,706 |
-| prefix `conn*` | 30,448 | 30,448 |
-| regexp `c.che` | 57,206 | 57,206 |
-| wildcard `*tion` | 113,086 | 113,086 |
-| wildcard `*nnec*` | 30,127 | 30,127 |
-| `must_not`: error !cache | 50,683 | 50,683 |
-| `term` ServiceName=cart | 416,919 | 416,919 |
-| range severity>=13 | 83,382 | 83,382 |
-
-`prefix conn*` is worth singling out: Typesense returned 20 of 6,493 for the
-equivalent query because its prefix expansion is capped at 4 candidates by
-default. Quickwit needs no such tuning.
-
-## Other operational notes
-
-- **No parquet ingest.** The CLI reads *"NDJSON documents from a file or
-  streamed from stdin"*, and the source config supports only `json`,
-  `otlp_logs_*`, `otlp_traces_*` and `plain_text`. The parquet → NDJSON
-  conversion in `ingest.py` is unavoidable.
-- **Bulk bodies are capped at 10MB** (`ingest_api.content_length_limit`);
-  20,000-document batches returned HTTP 413. Default batch size is 2,000.
-- **Commits are on a timer** (`commit_timeout_secs`, set to 30 in
-  `config/index_config.json`), so documents are not searchable the instant the
-  bulk call returns. `./load` waits for the count to be stable across six
-  consecutive polls — two equal readings are not enough, because a commit
-  landing between polls produces a false plateau that reported 858,000 of
-  1,000,000 as "settled".
-- **`--ulimit nofile=65535`** is set from the outset, after the typesense
-  adapter lost 7.5 hours to descriptor exhaustion presenting as a hang.
+- **Recent queries.** `lib/check_recent.py --store-unit=ms` checks the
+  time-sorted top-100 queries (Q68, Q70, Q72, Q73) against ground truth
+  computed from every corpus file. `--store-unit=ms` matches the index's
+  millisecond `Timestamp`: a document at 00:30:00.000400 is inside
+  `lte 00:30:00` for Quickwit. The main runs pass on every round, on local disk
+  and S3, at 100M, 1B and 10B.
+- **Sort by timestamp.** In 0.9.x, a `Timestamp` descending sort could skip
+  splits whose time range ended in the same second as the current worst hit,
+  and return real but not-newest documents. It depends on split timing, so it
+  shows up mostly on S3, but at 1B it also made Q70, Q72 and Q73 wrong on local
+  disk. Main fixes it by rounding split time bounds outward in the metastore
+  (#6865, with an overflow fix in #6966).
+- **Counts and aggregations** were verified for 0.9.0 at 100M: every count and
+  every group-by bucket matched Elasticsearch, hit-returning queries matched on
+  their full match total, and every returned document satisfied its predicate.
+  Counts are exact (`hits.total.relation: eq`), and terms aggregations report
+  `doc_count_error_upper_bound: 0`; with 17 services, the corpus is well inside
+  the range where Tantivy's terms aggregation is exact.
+- `_score`-sorted top-k queries are compared by match total only: Tantivy and
+  Lucene compute BM25 differently, so which documents tie into the page
+  legitimately differs.
 
 ## Environment
 
-| var | default | meaning |
+| Variable | Default | Meaning |
 |---|---|---|
+| `QW_IMAGE` | pinned main build (above) | Quickwit image; a local image is used without pulling |
+| `QW_PULL_IMAGE` | `auto` | `auto` pulls only if the image is missing; `yes` always pulls; `no` requires a local image |
+| `QW_STORAGE` | `local` | `s3` stores the index and metastore under `QW_S3_ROOT` |
+| `QW_S3_ROOT` | none | required with `QW_STORAGE=s3` |
+| `QW_DATA_DIR` | `./qw-data` | node data dir (WAL, split store; the index with `local`) |
 | `QW_PORT` | `7280` | HTTP port |
-| `QW_IMAGE` | `quickwit/quickwit:0.9.0` | pinned image |
 | `QW_CONTAINER` | `searchbench-quickwit` | container name |
-| `QW_DATA_DIR` | `./qw-data` | data path (gitignored) |
 | `QW_INDEX` | `otel_logs` | index id |
+| `QW_SERVICES` | searcher + metastore after a load, all before | `QW_ENABLED_SERVICES` of the node |
+| `QW_EXTRA_ENV` | none | extra container environment, space-separated `KEY=VALUE` |
+| `QW_FAST_FIELD_CACHE` | `0` | `searcher.fast_field_cache_capacity` |
+| `QW_WAIT_MERGES` / `QW_MERGE_QUIET_SECS` / `QW_MERGE_MAX_SECS` | `yes` / 180 / 14400 | merge-settle wait |
+| `QW_DATA_SIZE` | `splits` | `du` reports the whole data dir instead of the published splits |
+| `SEARCHBENCH_LOAD_CLIENT` | Python | `rust` uses `client/` |
+| `SEARCHBENCH_LOAD_PROCESSES` | 16 | ingest processes |
+
+The index and ingest variables are listed under [Configuration](#configuration).

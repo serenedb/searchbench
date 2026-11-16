@@ -1,0 +1,18 @@
+[package]
+name = "qw-parquet-ingest"
+version = "0.1.0"
+edition = "2021"
+description = "Parquet -> Quickwit ingest API client for SearchBench (same documents as ingest.py, Arrow-native conversion)"
+
+[dependencies]
+anyhow = "1"
+arrow-array = "58"
+arrow-cast = "58"
+arrow-json = "58"
+arrow-schema = "58"
+parquet = { version = "58", default-features = false, features = ["arrow", "snap", "zstd", "lz4"] }
+ureq = { version = "2", default-features = false }
+
+[profile.release]
+codegen-units = 4
+lto = "thin"

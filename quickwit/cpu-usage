@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Cumulative CPU seconds of the engine container (SEARCHBENCH_CPU=on; see lib/cpu-usage.sh).
+exec "$(dirname "$0")/../lib/cpu-usage.sh" containers "${QW_CONTAINER:-searchbench-quickwit}"

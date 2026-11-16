@@ -2,20 +2,102 @@
 # Launch Quickwit container; idempotent via ./check
 set -euo pipefail
 cd "$(dirname "$0")"
+source config/dataset-defaults.sh
 : "${QW_PORT:=7280}"
 : "${QW_DATA_DIR:=${PWD}/qw-data}"
-: "${QW_IMAGE:=quickwit/quickwit:0.9.0}"
+: "${QW_IMAGE:=quickwit/quickwit:edge@sha256:34b9552eb09fa85785f529d888ed2a64df68d3e2241213710b74accf4023e8ff}"
 : "${QW_CONTAINER:=searchbench-quickwit}"
+: "${QW_STORAGE:=local}"
+# Once ./load has finished (marker in the data dir), serve queries from a
+# searcher + metastore node. An all-in-one node's ingester waits a hard-coded
+# 15s on shutdown to propagate its "retiring" status before decommissioning
+# (quickwit-ingest ingester.rs DECOMMISSION_DELAY), which the driver's restart
+# before every query paid 77 times per run. Nothing is ingesting or merging
+# after the load, so the query path is unchanged -- and no background merge or
+# janitor work runs during the timed queries. QW_SERVICES overrides.
+if [[ -z "${QW_SERVICES+x}" ]]; then
+    if [[ -f "${QW_DATA_DIR}/.searchbench-loaded" ]]; then QW_SERVICES="searcher,metastore"; else QW_SERVICES=""; fi
+fi
+services_env=(); [[ -n "$QW_SERVICES" ]] && services_env=(-e "QW_ENABLED_SERVICES=${QW_SERVICES}")
+# QW_EXTRA_ENV: extra container environment, space-separated KEY=VALUE pairs (default none).
+: "${QW_EXTRA_ENV=}"
+extra_env=(); for kv in ${QW_EXTRA_ENV:-}; do extra_env+=(-e "$kv"); done
+: "${QW_CLUSTERING:=on}"
+case "$QW_CLUSTERING" in
+    on)  clustering_env=(-e QW_DISABLE_DOCS_CLUSTERING=false) ;;
+    off) clustering_env=(-e QW_DISABLE_DOCS_CLUSTERING=true) ;;
+    *) echo "QW_CLUSTERING must be on or off, got: $QW_CLUSTERING" >&2; exit 1 ;;
+esac
+# QW_VALIDATE_DOCS=off disables ingest-time document validation on the server
+# (QW_DISABLE_DOCUMENT_VALIDATION; ./load also sets ingest_settings.validate_docs
+# = false in the index config). Docs are still parsed by the indexing pipeline.
+: "${QW_VALIDATE_DOCS:=on}"
+case "$QW_VALIDATE_DOCS" in
+    on)  validate_env=() ;;
+    off) validate_env=(-e QW_DISABLE_DOCUMENT_VALIDATION=true) ;;
+    *) echo "QW_VALIDATE_DOCS must be on or off, got: $QW_VALIDATE_DOCS" >&2; exit 1 ;;
+esac
+case "$QW_STORAGE" in
+    local) QW_CONFIG_FILE=config/quickwit.yaml; s3_env=() ;;
+    s3)    : "${QW_S3_ROOT:?QW_STORAGE=s3 needs QW_S3_ROOT (e.g. s3://bucket/searchbench/host)}"
+           QW_CONFIG_FILE=config/quickwit_s3.yaml
+           # Credentials come from the instance profile via IMDS (host network).
+           s3_env=(-e "QW_S3_ROOT=${QW_S3_ROOT}" -e "AWS_REGION=${AWS_REGION:-us-east-1}") ;;
+    *) echo "QW_STORAGE must be local or s3, got: $QW_STORAGE" >&2; exit 1 ;;
+esac
 
-if ./check >/dev/null 2>&1; then echo "Quickwit already up on :${QW_PORT}"; exit 0; fi
 mkdir -p "$QW_DATA_DIR"; chmod a+rwX "$QW_DATA_DIR" 2>/dev/null || true
+# QW_SHARD_THROUGHPUT_LIMIT (e.g. 20mb, the maximum; default unset = Quickwit's
+# ~5 MB/s): per-shard ingest throughput. The ingest API opens shards until the
+# load fits, and each shard has its own indexing pipeline, so a higher limit
+# means fewer shards and larger splits per commit. See the warning on this
+# setting in config/quickwit.yaml; ./load's count check fails the load on loss.
+# QW_INGEST_QUEUE_MEMORY / QW_INGEST_QUEUE_DISK (e.g. 64GiB / 160GiB; default the
+# node config's 32GiB / 64GiB): the ingest queue (WAL). Through the ingest API a
+# document stays in it until its split is published, so it must hold
+# ingest rate x commit_timeout_secs; when it fills, Quickwit answers 503
+# "no shards available" until a commit frees it. 32 GiB with a 120 s commit
+# caps a load at ~240k docs/s of this corpus.
+cfg_src="$QW_CONFIG_FILE"
+# QW_FAST_FIELD_CACHE overrides searcher.fast_field_cache_capacity (0 = off in the
+# configs, so hot tries re-read fast fields from storage like the cold one); e.g.
+# 16GiB restores the setting used by the runs before 2026-10-31.
+if [[ -n "${QW_SHARD_THROUGHPUT_LIMIT:-}${QW_INGEST_QUEUE_MEMORY:-}${QW_INGEST_QUEUE_DISK:-}${QW_FAST_FIELD_CACHE:-}" ]]; then
+    cfg_out="${QW_DATA_DIR}/.quickwit-node.yaml"
+    cp "$cfg_src" "$cfg_out"
+    if [[ -n "${QW_SHARD_THROUGHPUT_LIMIT:-}" ]]; then
+        sed -i "s/^ingest_api:\$/ingest_api:\n  shard_throughput_limit: ${QW_SHARD_THROUGHPUT_LIMIT}/" "$cfg_out"
+        grep -q "^  shard_throughput_limit: ${QW_SHARD_THROUGHPUT_LIMIT}\$" "$cfg_out" || { echo "failed to set shard_throughput_limit" >&2; exit 1; }
+    fi
+    if [[ -n "${QW_INGEST_QUEUE_MEMORY:-}" ]]; then
+        sed -i "s/^  max_queue_memory_usage: .*/  max_queue_memory_usage: ${QW_INGEST_QUEUE_MEMORY}/" "$cfg_out"
+        grep -q "^  max_queue_memory_usage: ${QW_INGEST_QUEUE_MEMORY}\$" "$cfg_out" || { echo "failed to set max_queue_memory_usage" >&2; exit 1; }
+    fi
+    if [[ -n "${QW_FAST_FIELD_CACHE:-}" ]]; then
+        sed -i "s/^  fast_field_cache_capacity: .*/  fast_field_cache_capacity: ${QW_FAST_FIELD_CACHE}/" "$cfg_out"
+        grep -q "^  fast_field_cache_capacity: ${QW_FAST_FIELD_CACHE}\$" "$cfg_out" || { echo "failed to set fast_field_cache_capacity" >&2; exit 1; }
+    fi
+    if [[ -n "${QW_INGEST_QUEUE_DISK:-}" ]]; then
+        sed -i "s/^  max_queue_disk_usage: .*/  max_queue_disk_usage: ${QW_INGEST_QUEUE_DISK}/" "$cfg_out"
+        grep -q "^  max_queue_disk_usage: ${QW_INGEST_QUEUE_DISK}\$" "$cfg_out" || { echo "failed to set max_queue_disk_usage" >&2; exit 1; }
+    fi
+    cfg_mount="$cfg_out"
+else
+    cfg_mount="${PWD}/${cfg_src}"
+fi
 
+# Recreate on any change of identity: image, storage mode or data dir. Reusing
+# a container created for another mode would silently benchmark the wrong one.
+want_label="${QW_IMAGE}|${QW_EXTRA_ENV:-}|${QW_STORAGE}|${QW_CLUSTERING}|${QW_VALIDATE_DOCS}|${QW_SHARD_THROUGHPUT_LIMIT:-default}|${QW_INGEST_QUEUE_MEMORY:-default}|${QW_INGEST_QUEUE_DISK:-default}|${QW_SERVICES:-all}|${QW_DATA_DIR}|${QW_S3_ROOT:-}|in-memory-indexing=${QW_ENABLE_IN_MEMORY_INDEXING}"
 if docker inspect "$QW_CONTAINER" >/dev/null 2>&1 \
-   && [[ "$(docker inspect -f '{{.Config.Image}}' "$QW_CONTAINER")" != "$QW_IMAGE" ]]; then
-    echo "container was built from a different image; recreating for ${QW_IMAGE}"
+   && [[ "$(docker inspect -f '{{index .Config.Labels "searchbench"}}' "$QW_CONTAINER")" != "$want_label" ]]; then
+    echo "container was created for a different image/storage; recreating for ${want_label}"
     docker rm -f "$QW_CONTAINER" >/dev/null
 fi
 if docker inspect "$QW_CONTAINER" >/dev/null 2>&1; then
+    # Check identity before the healthy-container shortcut: a running container
+    # must not silently retain a previous dataset's document-validation mode.
+    if ./check >/dev/null 2>&1; then echo "Quickwit already up on :${QW_PORT}"; exit 0; fi
     docker start "$QW_CONTAINER" >/dev/null
 else
     # nofile: same lesson as the typesense adapter -- a descriptor-starved
@@ -24,14 +106,18 @@ else
     # rather than of a hand-created container. The recorded 100m run used it.
     docker run -d --name "$QW_CONTAINER" --network host \
         --ulimit nofile=65535:65535 \
+        --label "searchbench=${want_label}" \
+        "${s3_env[@]}" "${clustering_env[@]}" "${validate_env[@]}" "${services_env[@]}" \
         -e QW_DISABLE_TELEMETRY=1 \
+        "${extra_env[@]}" \
+        -e "QW_ENABLE_IN_MEMORY_INDEXING=${QW_ENABLE_IN_MEMORY_INDEXING}" \
         -e "QW_LISTEN_ADDRESS=0.0.0.0" \
         -v "${QW_DATA_DIR}:/quickwit/qwdata" \
-        -v "${PWD}/config/quickwit.yaml:/quickwit/config/quickwit.yaml:ro" \
+        -v "${cfg_mount}:/quickwit/config/quickwit.yaml:ro" \
         "$QW_IMAGE" run >/dev/null
 fi
 for _ in $(seq 1 180); do
-    if ./check >/dev/null 2>&1; then echo "Quickwit up on :${QW_PORT} (backend=docker)"; exit 0; fi
+    if ./check >/dev/null 2>&1; then echo "Quickwit up on :${QW_PORT} (backend=docker, storage=${QW_STORAGE}, clustering=${QW_CLUSTERING}, services=${QW_SERVICES:-all})"; exit 0; fi
     sleep 1
 done
 echo "Quickwit did not become healthy within 180s." >&2

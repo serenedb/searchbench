@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
-# On-disk bytes of the Quickwit data dir (split files + metastore).
+# Bytes of the index: the sum of Published split files, from the metastore.
+#
+# Not `du` of the data dir: that also counts the WAL, the ingest queues, the
+# indexer split cache (a second copy of every recent split) and merged-away
+# splits the janitor has not deleted yet -- 2-3x the index at 10m. The split
+# sum is the analogue of what the ES/OpenSearch adapters report (index store
+# size), and it is the same number for local and S3 storage.
+# QW_DATA_SIZE=du restores the old whole-data-dir measure.
 set -euo pipefail
 cd "$(dirname "$0")"
+: "${QW_PORT:=7280}"; : "${QW_INDEX:=otel_logs}"
 : "${QW_DATA_DIR:=${PWD}/qw-data}"
-du -s --block-size=1 "$QW_DATA_DIR" | cut -f1
+if [[ "${QW_DATA_SIZE:-splits}" == du ]]; then
+    du -s --block-size=1 "$QW_DATA_DIR" | cut -f1; exit 0
+fi
+curl -fsS "http://127.0.0.1:${QW_PORT}/api/v1/indexes/${QW_INDEX}/splits?split_states=Published" \
+  | python3 -c 'import sys,json; print(sum(s["footer_offsets"]["end"] for s in json.load(sys.stdin)["splits"]))'

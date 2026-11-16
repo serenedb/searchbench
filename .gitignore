@@ -66,3 +66,5 @@ manticore/manticore-data/
 node_modules/
 frontend/.build/
 frontend/results.json.??????
+_site/
+/frontend/node_modules

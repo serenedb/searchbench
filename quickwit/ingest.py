@@ -1,25 +1,20 @@
 #!/usr/bin/env python3
-# Parquet -> Quickwit ingest through the NATIVE ingest endpoint.
-#
-# NOT the Elasticsearch-compatible /api/v1/_elastic/_bulk shim. That shim
-# silently drops documents under concurrent load -- HTTP 200, errors:false, no
-# per-item error -- and the loss grows with throughput: at 100M, 4 processes
-# lost 0.28% and 8 lost 1.32%. It is not ingest v2 that loses them, which is
-# what this adapter used to claim: the same v2 engine, same concurrency, through
-# /api/v1/<index>/ingest indexed 100,000,000 of 100,000,000 at 134k docs/s.
+# Parquet -> Quickwit ingest through the native ingest endpoint
+# (/api/v1/<index>/ingest), not /api/v1/_elastic/_bulk (see README, Load).
 #
 # The native endpoint takes bare NDJSON -- one document per line, no action
 # line -- and commits on the index's commit_timeout_secs. Do not add
-# ?commit=wait_for: that forces a commit per request and collapses throughput
-# to ~50 docs/s.
+# ?commit=wait_for: that forces a commit per request and collapses throughput.
 """High-throughput Parquet -> Quickwit ingest (native /ingest endpoint)."""
 
 import argparse
+import mmap
 import os
 import queue
+import random
 import threading
 import time
-from multiprocessing import Pool
+from multiprocessing import Pool, Value
 
 import orjson
 import pyarrow as pa
@@ -60,7 +55,10 @@ def batch_to_ndjson(batch: pa.RecordBatch) -> tuple[bytes, int]:
         col = batch.column(name)
         t = col.type
         if pa.types.is_timestamp(t):
-            # epoch millis: the index config declares unix_timestamp input.
+            # Epoch MILLIseconds, matching the index config's fast_precision:
+            # milliseconds (enough for log search; documents sharing a
+            # millisecond keep index order). unix_timestamp input infers the
+            # unit from magnitude (1.7e12 -> ms).
             cols[out] = pc.divide(col.cast(pa.int64()), 1_000_000).to_pylist()
         elif pa.types.is_map(t):
             cols[out] = [dict(v) if v is not None else None for v in col.to_pylist()]
@@ -73,8 +71,16 @@ def batch_to_ndjson(batch: pa.RecordBatch) -> tuple[bytes, int]:
     return b"".join(parts), batch.num_rows
 
 
+# Retry on 429/503 with exponential backoff, capped at SEARCHBENCH_LOAD_BACKOFF_MAX
+# seconds (default 30, the published runs). Quickwit answers 503 while it opens
+# shards for a growing load; with a 30 s cap all the senders end up waiting
+# together and the server idles. Jitter keeps them from retrying in lockstep.
+_BACKOFF_MAX = float(os.environ.get("SEARCHBENCH_LOAD_BACKOFF_MAX", 30.0))
+_LOGGED_REJECTIONS = [0]
+
+
 def bulk_post(session: requests.Session, body: bytes, n: int) -> tuple[int, int]:
-    backoff, retries = 1.0, 0
+    backoff, retries = min(1.0, _BACKOFF_MAX), 0
     url = f"{QW_URL}/api/v1/{QW_INDEX}/ingest"
     while True:
         try:
@@ -82,12 +88,15 @@ def bulk_post(session: requests.Session, body: bytes, n: int) -> tuple[int, int]
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             retries += 1
             print(f"  connect error ({type(e).__name__}); retry {retries}", flush=True)
-            time.sleep(min(backoff, 30.0)); backoff *= 2
+            time.sleep(min(backoff, _BACKOFF_MAX)); backoff *= 2
             session = requests.Session()
             continue
         if resp.status_code in (429, 503):
             retries += 1
-            time.sleep(min(backoff, 30.0)); backoff *= 2
+            if _LOGGED_REJECTIONS[0] < 3:
+                _LOGGED_REJECTIONS[0] += 1
+                print(f"  HTTP {resp.status_code}: {resp.text[:300]!r}", flush=True)
+            time.sleep(min(backoff, _BACKOFF_MAX) * random.uniform(0.5, 1.0)); backoff *= 2
             continue
         resp.raise_for_status()
         return n, retries
@@ -127,20 +136,127 @@ def ingest_segment(args: tuple) -> dict:
     return stats
 
 
-def process_file(file_path: str, batch_size: int, num_processes: int, workers_n: int) -> int:
+def _prebuilt_paths(out_dir: str, rg_idx: int) -> tuple[str, str]:
+    base = os.path.join(out_dir, f"rg_{rg_idx:05d}")
+    return base + ".ndjson", base + ".idx"
+
+
+def convert_row_group(args: tuple) -> int:
+    """Write the exact request bodies ingest_* would send for one row group
+    (batch_to_ndjson, same batch size) plus an index of (offset, length, docs)."""
+    file_path, rg_idx, batch_size, out_dir = args
+    pf = pq.ParquetFile(file_path)
+    data_path, idx_path = _prebuilt_paths(out_dir, rg_idx)
+    entries, off, n_docs = [], 0, 0
+    with open(data_path + ".tmp", "wb") as f:
+        for batch in pf.read_row_group(rg_idx).to_batches(max_chunksize=batch_size):
+            body, n = batch_to_ndjson(batch)
+            f.write(body); entries.append((off, len(body), n)); off += len(body); n_docs += n
+    with open(idx_path + ".tmp", "w") as f:
+        f.write("\n".join(f"{o} {l} {n}" for o, l, n in entries) + "\n")
+    os.replace(data_path + ".tmp", data_path); os.replace(idx_path + ".tmp", idx_path)
+    return n_docs
+
+
+def convert_file(file_path: str, batch_size: int, num_processes: int, out_dir: str) -> int:
+    os.makedirs(out_dir, exist_ok=True)
+    total_rg = pq.ParquetFile(file_path).metadata.num_row_groups
+    t0 = time.monotonic()
+    with Pool(processes=num_processes) as pool:
+        n = sum(pool.map(convert_row_group, [(file_path, i, batch_size, out_dir) for i in range(total_rg)]))
+    el = time.monotonic() - t0
+    print(f"{file_path}: converted {n:,} docs / {total_rg} row groups to {out_dir} in {el:.1f}s "
+          f"({n/el:,.0f} docs/s)", flush=True)
+    return n
+
+
+def _prebuilt_bodies(out_dir: str, rg_idx: int):
+    """Yield (body, n_docs) for one row group from the files convert_row_group wrote."""
+    data_path, idx_path = _prebuilt_paths(out_dir, rg_idx)
+    with open(idx_path) as f:
+        entries = [tuple(int(x) for x in line.split()) for line in f if line.strip()]
+    with open(data_path, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+        for off, length, n in entries:
+            yield bytes(mm[off:off + length]), n
+
+
+_NEXT_RG = None
+
+
+def _init_queue(counter):
+    global _NEXT_RG
+    _NEXT_RG = counter
+
+
+def ingest_from_queue(args: tuple) -> dict:
+    """Lease the next row group from a counter shared by all processes, until
+    none is left. The processes stay on adjacent row groups, so documents reach
+    Quickwit in near time order (the corpus is sorted by Timestamp)."""
+    file_path, total_rg, batch_size, workers_n, prebuilt_dir = args
+    pf = None if prebuilt_dir else pq.ParquetFile(file_path)
+    q: queue.Queue = queue.Queue(maxsize=workers_n * 4)
+    stats = {"indexed": 0, "retries": 0, "row_groups": 0}
+    lock = threading.Lock()
+
+    def worker():
+        session = requests.Session()
+        while True:
+            item = q.get()
+            if item is None:
+                q.task_done(); break
+            body, n = item
+            ok, r = bulk_post(session, body, n)
+            with lock:
+                stats["indexed"] += ok; stats["retries"] += r
+            q.task_done()
+
+    ws = [threading.Thread(target=worker, daemon=True) for _ in range(workers_n)]
+    for w in ws:
+        w.start()
+    while True:
+        with _NEXT_RG.get_lock():
+            rg_idx = _NEXT_RG.value
+            _NEXT_RG.value += 1
+        if rg_idx >= total_rg:
+            break
+        stats["row_groups"] += 1
+        if prebuilt_dir:
+            for item in _prebuilt_bodies(prebuilt_dir, rg_idx):
+                q.put(item)
+        else:
+            for batch in pf.read_row_group(rg_idx).to_batches(max_chunksize=batch_size):
+                q.put(batch_to_ndjson(batch))
+    for _ in ws:
+        q.put(None)
+    for w in ws:
+        w.join()
+    return stats
+
+
+def process_file(file_path: str, batch_size: int, num_processes: int, workers_n: int,
+                 order: str = "slices", prebuilt_dir: str | None = None) -> int:
     pf = pq.ParquetFile(file_path)
     total_rows, total_rg = pf.metadata.num_rows, pf.metadata.num_row_groups
     print(f"{file_path}: {total_rows:,} rows / {total_rg} row groups -> "
-          f"{num_processes} processes x {workers_n} bulk workers", flush=True)
-    rg_per = (total_rg + num_processes - 1) // num_processes
-    segs = [(file_path, i * rg_per, min((i + 1) * rg_per, total_rg), batch_size, workers_n)
-            for i in range(num_processes) if i * rg_per < total_rg]
+          f"{num_processes} processes x {workers_n} bulk workers, order={order}"
+          f"{', prebuilt bodies from ' + prebuilt_dir if prebuilt_dir else ''}", flush=True)
+    if prebuilt_dir and order != "queue":
+        raise SystemExit("--prebuilt-dir requires --order queue")
     t0 = time.monotonic()
-    with Pool(processes=len(segs)) as pool:
-        results = pool.map(ingest_segment, segs)
+    if order == "queue":
+        counter = Value("q", 0)
+        with Pool(processes=num_processes, initializer=_init_queue, initargs=(counter,)) as pool:
+            results = pool.map(ingest_from_queue, [(file_path, total_rg, batch_size, workers_n, prebuilt_dir)] * num_processes)
+    else:
+        rg_per = (total_rg + num_processes - 1) // num_processes
+        segs = [(file_path, i * rg_per, min((i + 1) * rg_per, total_rg), batch_size, workers_n)
+                for i in range(num_processes) if i * rg_per < total_rg]
+        with Pool(processes=len(segs)) as pool:
+            results = pool.map(ingest_segment, segs)
     el = time.monotonic() - t0
     total = sum(r["indexed"] for r in results)
-    print(f"File done: {total:,} docs in {el:.1f}s  ({total/el:,.0f} docs/s)", flush=True)
+    retries = sum(r.get("retries", 0) for r in results)
+    print(f"File done: {total:,} docs in {el:.1f}s  ({total/el:,.0f} docs/s), {retries:,} retried requests", flush=True)
     return total
 
 
@@ -148,25 +264,45 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--files", type=int, required=True)
     p.add_argument("--start-file", type=int, default=0)
-    # Concurrency is safe on the native endpoint: 16 processes indexed
-    # 100,000,000 of 100,000,000 at 134,222 docs/s (745s), against 6,747s for
-    # the serial ES-bulk path this replaced. The serial default existed only to
-    # work around the ES shim's losses; it cost 9x and still lost 12,000
-    # documents at 100M.
+    # 16 processes indexed all 100M documents at ~134k docs/s on the native endpoint.
     p.add_argument("--processes", type=int,
                    default=int(os.environ.get("SEARCHBENCH_LOAD_PROCESSES", 16)))
-    p.add_argument("--bulk-workers", type=int, default=1)
+    # Concurrent senders per reader process. --processes 1 --bulk-workers N reads
+    # the file in order and keeps N requests in flight: documents reach Quickwit
+    # in near time order (out of order by at most ~N batches), so splits stay
+    # narrow in time. --processes N sends N file slices in parallel instead, and
+    # every split then mixes N time ranges.
+    p.add_argument("--bulk-workers", type=int,
+                   default=int(os.environ.get("SEARCHBENCH_LOAD_BULK_WORKERS", 1)))
     # Quickwit rejects large bulk bodies with HTTP 413; its limit is not
     # configurable through the ES layer. 2000 rows of this corpus is ~2.5MB
     # and is accepted; 20000 was not.
+    # slices: process i sends a contiguous 1/N of the file (the published runs);
+    # every split then mixes N time ranges. queue: the processes lease the next
+    # row group from a shared counter, so they stay on adjacent row groups and
+    # splits stay narrow in time, at the same throughput.
+    p.add_argument("--order", choices=["slices", "queue"],
+                   default=os.environ.get("SEARCHBENCH_LOAD_ORDER", "slices"))
     p.add_argument("--batch-size", type=int, default=2000)
     p.add_argument("--local-dir", default="/tmp")
+    # Client-cost isolation (tests): --convert-to DIR writes, once, the exact
+    # request bodies a load would send (per row group: <rg>.ndjson + <rg>.idx)
+    # and exits; --prebuilt-dir DIR (with --order queue) sends those bytes
+    # instead of converting Parquet rows in Python, so the load measures the
+    # ingest API rather than this client's ~20k docs/s per process.
+    p.add_argument("--convert-to", default=os.environ.get("SEARCHBENCH_LOAD_CONVERT_TO"))
+    p.add_argument("--prebuilt-dir", default=os.environ.get("SEARCHBENCH_LOAD_PREBUILT_DIR"))
     args = p.parse_args()
     t0 = time.monotonic()
     grand = 0
     for fn in range(args.start_file, args.start_file + args.files):
-        grand += process_file(os.path.join(args.local_dir, f"part_{fn:03d}.parquet"),
-                              args.batch_size, args.processes, args.bulk_workers)
+        part = os.path.join(args.local_dir, f"part_{fn:03d}.parquet")
+        sub = lambda d: os.path.join(d, f"part_{fn:03d}")
+        if args.convert_to:
+            grand += convert_file(part, args.batch_size, args.processes, sub(args.convert_to))
+            continue
+        grand += process_file(part, args.batch_size, args.processes, args.bulk_workers, args.order,
+                              sub(args.prebuilt_dir) if args.prebuilt_dir else None)
     el = time.monotonic() - t0
     print(f"\nGrand total: {grand:,} docs in {el:.1f}s  ({grand/el:,.0f} docs/s)")
 

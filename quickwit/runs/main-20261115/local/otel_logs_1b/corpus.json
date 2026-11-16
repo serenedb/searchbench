@@ -1,0 +1,7 @@
+{
+  "dataset": "otel_logs_1b",
+  "files": 1,
+  "rows": 1000000000,
+  "download_seconds": 58,
+  "size_etag_verified": true
+}

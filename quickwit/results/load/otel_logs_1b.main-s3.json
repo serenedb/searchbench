@@ -1,0 +1,28 @@
+{
+  "engine": "Quickwit",
+  "dataset": "otel_logs_1b",
+  "build": "main-961c871-s3",
+  "engine_version": "0.9.3-nightly (961c871)",
+  "load_time": 2438.853,
+  "data_size": 45222658798,
+  "storage_units": {
+    "count": 67,
+    "unit": "splits"
+  },
+  "os": "Ubuntu 24.04.5 LTS",
+  "date": "2026-11-15",
+  "loaded_by": "empty query file (load only); queries run in separate rounds",
+  "phases": {
+    "ingest": 2236.8,
+    "merge_after": 15.1,
+    "check": 180.0,
+    "merge_busy": 2200.0,
+    "merge_work": 6720.0,
+    "samples": 486,
+    "failed_samples": 0,
+    "sample_secs": 5
+  },
+  "load_cpu": 28126.179,
+  "load_cpu_containers": 25789.81,
+  "load_cpu_procs": 2336.369
+}
