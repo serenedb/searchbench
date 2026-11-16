@@ -1,0 +1,2 @@
+Filesystem         1B-blocks        Used     Available Use% Mounted on
+/dev/nvme0n1   3169497317376 41598976000 2966820290560   2% /mnt/qw

@@ -1,0 +1,59 @@
+# Node config for QW_STORAGE=s3: splits AND metastore on S3.
+#
+# Identical to quickwit.yaml except for where data lives. Keep the two in sync:
+# the point of the s3 column is to isolate the cost of object storage, so any
+# other difference would be a confound.
+#
+# - metastore: file-backed, on S3 (metastore.json per index under the root).
+# - splits: default_index_root_uri on S3. The local data dir still holds the
+#   ingest WAL and the split store used for merges, as in any real deployment.
+# - No searcher split_cache (disabled unless specified): every cold read goes
+#   to S3, and the in-memory caches below are cleared by the driver's restart
+#   before each query, so try 1 is a genuine S3 read.
+#
+# ${QW_S3_ROOT} is set by ./start, e.g. s3://<bucket>/searchbench/<host>.
+version: 0.8
+metastore_uri: ${QW_S3_ROOT}/indexes
+default_index_root_uri: ${QW_S3_ROOT}/indexes
+ingest_api:
+  # ./start adds shard_throughput_limit when QW_SHARD_THROUGHPUT_LIMIT is set, and
+  # rewrites the two queue limits from QW_INGEST_QUEUE_MEMORY / QW_INGEST_QUEUE_DISK.
+  max_queue_memory_usage: 32GiB
+  max_queue_disk_usage: 64GiB
+  content_length_limit: 32MiB
+searcher:
+  # Data and result caches off; the split footer cache (split metadata) stays at
+  # its 500 MB default. See README.md, "Caches". QW_FAST_FIELD_CACHE overrides
+  # fast_field_cache_capacity.
+  fast_field_cache_capacity: 0
+  partial_request_cache_capacity: 0
+  predicate_cache_capacity: 0
+  # The driver owns the per-query cap; keep Quickwit's 30 s defaults from cutting
+  # a cold try short. The leaf timeout bounds the node's whole leaf search (on one node,
+  # every split of the query); the 2026-11-15 local 10B run had it at the 30 s
+  # default and lost 7 cold tries to it.
+  request_timeout_secs: 300
+  leaf_request_timeout_secs: 300
+
+# Document clustering (Quickwit main; experimental, node-level, fresh splits only).
+# A logs clustering policy (structure, source, status, message) mapped onto this OTel corpus:
+#   structure -> structure     (key set; LogAttributes/ResourceAttributes vary)
+#   source    -> ServiceName   (17 values)
+#   status    -> SeverityText  (6 values)
+#   message   -> Body, tokenized (token-type pattern, not literal values)
+# Each fresh split is reordered hierarchically in that order, largest groups
+# first; merges preserve it. It only changes doc order, so query results are
+# unchanged. Disable with QW_DISABLE_DOCS_CLUSTERING=true
+# (./start maps QW_CLUSTERING=off to it) to measure the unclustered baseline.
+docs_clustering:
+  - fingerprint:
+      - kind: structure
+  - fingerprint:
+      - kind: raw
+        path: ServiceName
+  - fingerprint:
+      - kind: raw
+        path: SeverityText
+  - fingerprint:
+      - kind: tokenized
+        path: Body

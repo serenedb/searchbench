@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
+# Engine version as reported by the running node, plus the commit for builds
+# that are not a release tag (e.g. "0.9.1 (af0591a)" for a main build).
 set -euo pipefail
 : "${QW_PORT:=7280}"
-curl -fsS "http://127.0.0.1:${QW_PORT}/api/v1/version" 2>/dev/null \
-  | python3 -c "import sys,json;print(json.load(sys.stdin).get('build',{}).get('version') or json.load(sys.stdin).get('version','unknown'))" 2>/dev/null || echo unknown
+curl -fsS "http://127.0.0.1:${QW_PORT}/api/v1/version" 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin); b = d.get("build", d)
+v = b.get("version") or "unknown"
+h, tags = (b.get("commit_short_hash") or "").strip(), b.get("commit_tags") or []
+if h and not any(t.lstrip("v") == v.lstrip("v") for t in tags):
+    v = f"{v} ({h})"
+print(v)' 2>/dev/null || echo unknown

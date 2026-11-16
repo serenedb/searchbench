@@ -53,6 +53,17 @@ SEARCHBENCH_DATA_DIR="${SEARCHBENCH_DATA_DIR%/}/${SEARCHBENCH_DATASET}"
 # below. Keep ui/index.html's TIMEOUT_CAP in sync so the UI flags capped cells.
 : "${SEARCHBENCH_QUERY_TIMEOUT:=60}"
 : "${SEARCHBENCH_COLD_TIMEOUT:=$SEARCHBENCH_QUERY_TIMEOUT}"
+# SEARCHBENCH_CPU=on: record the engine's CPU seconds per try in `cpu[]` (parallel to `result[]`),
+# from the adapter's optional ./cpu-usage (cumulative user + system seconds of the engine's
+# containers or processes; see lib/cpu-usage.sh), read just before and after each try. null where
+# the adapter has no ./cpu-usage or the engine is not running. Off by default: results unchanged.
+# It also records the load's CPU (`load_cpu` in the load record and the results file): the CPU of every
+# container under SEARCHBENCH_CPU_SLICE during ./load, merges and their settle wait included (Docker
+# daemon `"cgroup-parent": "<slice>"`, so short-lived load containers count too), plus the CPU of
+# ./load's own processes (clients) and the adapter's optional ./load-cpu-usage (DuckDB's worker, which
+# runs the sort). null if the slice is missing.
+: "${SEARCHBENCH_CPU:=off}"
+: "${SEARCHBENCH_CPU_SLICE:=searchbench.slice}"
 # Smoke scales (100k/1m/100m) validate plumbing, not cold-vs-hot perf: download
 # slices a bounded corpus prefix to a small part_000.parquet (lib/download-otel-logs).
 case "$SEARCHBENCH_DATASET" in
@@ -138,9 +149,10 @@ else
     : "${SEARCHBENCH_RESULTS:=results/${ENGINE_NAME,,}_${SEARCHBENCH_DATASET}.json}"
 fi
 
-# --- index-build identity: where load_time/data_size live --------------------
-# Those two numbers describe an INDEX BUILD, not a query run, so they get their
-# own file rather than being copied into every variant's results JSON. One
+# --- index-build identity: where load metrics live --------------------------
+# Load time, data size and storage-unit count describe an INDEX BUILD, not a
+# query run, so they get their own authoritative file. Result JSON copies are
+# caches; the frontend overlays the authoritative record. One
 # writer (a --index run), many readers -- so adding a query variant can neither
 # lose the number nor silently duplicate it against a different build.
 #
@@ -236,11 +248,14 @@ parse_timing() {
 run_one_query() {
     local query="$1" qnum="$2"
     local i raw timing rows="-" err_out=""
-    local results=()
+    local results=() cpus=()
     local stdout_file
     stdout_file=$(mktemp)
 
-    cold_cycle
+    # A query the adapter cannot express does no work, so it needs no cold
+    # start: skipping the stop + cache drop + start saves ~10-20s per sentinel
+    # (15-22 of them per engine). The next real query still gets its own cycle.
+    [[ "$query" == UNSUPPORTED:* ]] || cold_cycle
 
     for i in $(seq 1 "$SEARCHBENCH_TRIES"); do
         # Result rows (stdout) -> file; stderr -> $raw (timing + row-count tag).
@@ -258,7 +273,8 @@ run_one_query() {
         if [[ "${cap:-0}" -gt 0 ]] && command -v timeout >/dev/null 2>&1; then
             runner=(timeout -k 10 "${cap}s" ./query)
         fi
-        local rc
+        local rc cpu0=""
+        [[ "$SEARCHBENCH_CPU" == on && -x ./cpu-usage ]] && cpu0=$(./cpu-usage 2>/dev/null)
         if raw=$(printf '%s\n' "$query" | "${runner[@]}" 2>&1 1>"$stdout_file"); then
             timing=$(parse_timing "$raw")
             [[ -z "$timing" ]] && timing="null"
@@ -284,6 +300,10 @@ run_one_query() {
             printf '%s\n' "$raw" >&2
         fi
         results+=("$timing")
+        if [[ "$SEARCHBENCH_CPU" == on ]]; then
+            local cpu1=""; [[ -n "$cpu0" ]] && cpu1=$(./cpu-usage 2>/dev/null)
+            if [[ "$timing" != null && -n "$cpu0" && -n "$cpu1" ]]; then cpus+=("$(awk -v a="$cpu0" -v b="$cpu1" 'BEGIN{d = b - a; printf "%.3f", (d < 0 ? 0 : d)}')"); else cpus+=("null"); fi
+        fi
 
         # A capped try won't get faster on retry; don't burn TRIES * cap. Pad
         # remaining tries with the cap (keeps SEARCHBENCH_TRIES entries, renders
@@ -291,6 +311,7 @@ run_one_query() {
         if [[ "$rows" == "timeout" ]]; then
             while (( ${#results[@]} < SEARCHBENCH_TRIES )); do
                 results+=("$SEARCHBENCH_QUERY_TIMEOUT")
+                [[ "$SEARCHBENCH_CPU" == on ]] && cpus+=("null")
             done
             warn "Q${qnum}: cap hit on try ${i} — skipping the remaining tries"
             break
@@ -319,6 +340,11 @@ run_one_query() {
         [[ "$j" -lt $((${#results[@]} - 1)) ]] && out+=","
     done
     out+="]"
+    if [[ "$SEARCHBENCH_CPU" == on && -n "${CPU_ROW_FILE:-}" ]]; then
+        local c="[" k
+        for k in "${!cpus[@]}"; do c+="${cpus[$k]}"; [[ "$k" -lt $((${#cpus[@]} - 1)) ]] && c+=","; done
+        printf '%s]' "$c" > "$CPU_ROW_FILE"
+    fi
     printf '%s' "$out"
 }
 
@@ -331,6 +357,25 @@ get_os_name() {
         awk -F= '$1=="PRETTY_NAME" { gsub(/"/, "", $2); print $2 }' /etc/os-release
     else
         uname -sr
+    fi
+}
+
+# Optional engine hook: one JSON object describing persisted data units.
+# A missing/failed hook is unknown (null), never a fabricated zero. Count after
+# ./load's settling gate, outside the load timer, before running queries.
+read_storage_units() {
+    local units
+    if [[ ! -x ./storage-units ]]; then printf 'null'; return; fi
+    if units=$(./storage-units) && units=$(printf '%s' "$units" | jq -ces '
+        select(length == 1) | .[0] |
+        select(type == "object" and (.count | type == "number") and
+               .count >= 0 and .count <= 9007199254740991 and (.count | floor) == .count and
+               (.unit == "splits" or .unit == "parts" or .unit == "files" or .unit == "objects")) |
+        {count, unit}'); then
+        printf '%s' "$units"
+    else
+        warn "./storage-units failed or returned invalid JSON; count not recorded"
+        printf 'null'
     fi
 }
 
@@ -350,16 +395,22 @@ write_load_record() {
           --arg os       "$os"                    --arg date    "$day" \
           --arg loaded_by "$SEARCHBENCH_QUERIES" \
           --argjson load_time "$secs"             --argjson data_size "$size" \
+          --argjson phases "$( [[ -s "${SEARCHBENCH_LOAD_PHASES_FILE:-}" ]] && jq -c . "$SEARCHBENCH_LOAD_PHASES_FILE" 2>/dev/null || echo null)" \
+          --argjson load_cpu "${LOAD_CPU:-null}" --argjson lcc "${LOAD_CPU_CONTAINERS:-null}" --argjson lcp "${LOAD_CPU_PROCS:-null}" \
+          --argjson storage_units "$storage_units" \
           '{engine:$engine, dataset:$dataset, build:$build, engine_version:$ev,
-            load_time:$load_time, data_size:$data_size,
-            os:$os, date:$date, loaded_by:$loaded_by}' \
+            load_time:$load_time, data_size:$data_size, storage_units:$storage_units,
+            os:$os, date:$date, loaded_by:$loaded_by}
+           + (if $phases then {phases:$phases} else {} end)
+           + (if $load_cpu != null then {load_cpu:$load_cpu, load_cpu_containers:$lcc, load_cpu_procs:$lcp} else {} end)' \
         > "$LOAD_RECORD"
+    [[ -n "${SEARCHBENCH_LOAD_PHASES_FILE:-}" ]] && rm -f "$SEARCHBENCH_LOAD_PHASES_FILE"
     log "load record -> $LOAD_RECORD"
 }
 
 # Read back a build's cost. Prefer this build's own record; fall back to the
 # engine's default build, which is the case that matters for a query-only
-# variant (esql over the index dsl built). Echoes "<load_time> <data_size>".
+# variant (esql over the index dsl built). Returns a JSON metrics object.
 read_load_record() {
     local f
     for f in "$LOAD_RECORD" "$LOAD_DEFAULT"; do
@@ -369,7 +420,7 @@ read_load_record() {
         ds=$(jq -c '.data_size // null' "$f" 2>/dev/null || echo null)
         [[ "$lt" == "null" ]] && continue
         log "load record: inherited load_time=${lt}s data_size=${ds} bytes from ${f#results/}"
-        printf '%s %s' "$lt" "$ds"
+        jq -c '{load_time, data_size, storage_units: (.storage_units // null)}' "$f"
         return 0
     done
     return 1
@@ -382,12 +433,13 @@ write_json() {
     # Encode only small scalars with jq (tiny argv). Big prebuilt arrays
     # (result/query_tags/explains) go via printf (builtin, no ARG_MAX limit) --
     # `jq --argjson` on 92 multiline EXPLAIN plans overflowed the command line.
-    local sys ver os dt dset
+    local sys ver os dt dset build
     sys=$(jq -n --arg s "$DISPLAY_SYSTEM"       '$s')
     ver=$(jq -n --arg s "$version"              '$s')
     os=$(jq  -n --arg s "$os_name"              '$s')
     dt=$(jq  -n --arg s "$date_str"             '$s')
     dset=$(jq -n --arg s "$SEARCHBENCH_DATASET" '$s')
+    build=$(jq -n --arg s "$SEARCHBENCH_BUILD" '$s')
     {
         printf '{\n'
         printf '  "system": %s,\n'    "$sys"
@@ -395,11 +447,15 @@ write_json() {
         printf '  "os": %s,\n'        "$os"
         printf '  "date": %s,\n'      "$dt"
         printf '  "dataset": %s,\n'   "$dset"
+        printf '  "build": %s,\n'     "$build"
         printf '  "tags": %s,\n'      "$ENGINE_TAGS"
         printf '  "load_time": %s,\n' "$load_secs"
         printf '  "data_size": %s,\n' "$data_size"
+        printf '  "storage_units": %s,\n' "$storage_units"
         printf '  "result": %s,\n'    "$rj"
         printf '  "query_tags": %s'   "$qj"      # no trailing comma; optionals prepend ",\n"
+        [[ "$SEARCHBENCH_CPU" == on ]] && \
+            printf ',\n  "cpu": %s' "${cpu_json:-[}"$'\n    ]'
         [[ "$DO_EXPLAIN" == yes ]] && \
             printf ',\n  "explains": %s'         "${explains_json}"$'\n    ]'
         [[ "$DO_EXPLAIN_ANALYZE" == yes ]] && \
@@ -450,7 +506,7 @@ main() {
     log "version: $version  os: $os_name  date: $date_str"
     [[ -n "$SEARCHBENCH_BUILD" ]] && log "build label       : $SEARCHBENCH_BUILD"
 
-    local load_secs data_size
+    local load_secs data_size storage_units=null
     if [[ "$do_index" == yes ]]; then
         if [[ "$SEARCHBENCH_SKIP_DOWNLOAD" != "yes" ]]; then
             log "==> download corpus"
@@ -459,15 +515,50 @@ main() {
 
         log "==> load"
         local load_start load_end
+        # Optional: ./load may write a flat JSON object of phase timings here
+        # (ingest, merge_after, check, merge_busy, ...); it is folded into the
+        # load record as "phases". Adapters that do not write it are unaffected.
+        export SEARCHBENCH_LOAD_PHASES_FILE="$(mktemp)"; rm -f "$SEARCHBENCH_LOAD_PHASES_FILE"
         load_start=$(date +%s.%N)
-        ./load
+        local slice0="" proc_cpu=""
+        [[ "$SEARCHBENCH_CPU" == on ]] && slice0=$("${LIB_DIR}/cpu-usage.sh" slice "$SEARCHBENCH_CPU_SLICE")
+        # ./load-cpu-usage (optional): cumulative CPU of an engine process that does the load work outside
+        # containers and outside ./load's own processes (DuckDB's worker, started by ./start, runs the sort).
+        local lcu0=""; [[ "$SEARCHBENCH_CPU" == on && -x ./load-cpu-usage ]] && lcu0=$(./load-cpu-usage 2>/dev/null)
+        if [[ "$SEARCHBENCH_CPU" == on ]]; then
+            # ./load in a subshell; `times` then reports the CPU of its finished descendants (line 2)
+            local tfile; tfile=$(mktemp)
+            ( ./load; rc=$?; times > "$tfile"; exit $rc )
+            proc_cpu=$(sed -n 2p "$tfile" | awk '{t = 0; for (i = 1; i <= 2; i++) { split($i, a, /m|s/); t += a[1] * 60 + a[2] } printf "%.3f", t}')
+            rm -f "$tfile"
+        else
+            ./load
+        fi
         sync
         load_end=$(date +%s.%N)
         load_secs=$(awk -v s="$load_start" -v e="$load_end" 'BEGIN{printf "%.3f", e-s}')
         log "load time: ${load_secs}s"
+        LOAD_CPU=null LOAD_CPU_CONTAINERS=null LOAD_CPU_PROCS=null
+        if [[ "$SEARCHBENCH_CPU" == on ]]; then
+            local slice1; slice1=$("${LIB_DIR}/cpu-usage.sh" slice "$SEARCHBENCH_CPU_SLICE")
+            if [[ -n "$lcu0" ]]; then
+                local lcu1; lcu1=$(./load-cpu-usage 2>/dev/null)
+                [[ -n "$lcu1" ]] && proc_cpu=$(awk -v p="${proc_cpu:-0}" -v a="$lcu0" -v b="$lcu1" 'BEGIN{d = b - a; printf "%.3f", p + (d < 0 ? 0 : d)}')
+            fi
+            [[ -n "$proc_cpu" ]] && LOAD_CPU_PROCS=$proc_cpu
+            if [[ -n "$slice0" && -n "$slice1" ]]; then
+                LOAD_CPU_CONTAINERS=$(awk -v a="$slice0" -v b="$slice1" 'BEGIN{printf "%.3f", b - a}')
+                LOAD_CPU=$(awk -v a="$LOAD_CPU_CONTAINERS" -v b="${proc_cpu:-0}" 'BEGIN{printf "%.3f", a + b}')
+            else
+                warn "no cgroup ${SEARCHBENCH_CPU_SLICE}: load CPU not recorded (set the Docker daemon's cgroup-parent)"
+            fi
+            log "load cpu: ${LOAD_CPU}s (containers ${LOAD_CPU_CONTAINERS}s + load processes ${LOAD_CPU_PROCS}s)"
+        fi
 
         data_size=$(./data-size)
         log "data size: ${data_size} bytes"
+        storage_units=$(read_storage_units)
+        log "storage units: $storage_units"
 
         # Guard silent partial loads (OOM-killed COPY, broken glob). 1B+ rows
         # are well above 5 GB on disk.
@@ -482,8 +573,9 @@ main() {
         # the load record rather than scavenging another variant's results file.
         local _lr
         if _lr=$(read_load_record); then
-            load_secs="${_lr%% *}"
-            data_size="${_lr##* }"
+            load_secs=$(jq -c '.load_time' <<< "$_lr")
+            data_size=$(jq -c '.data_size' <<< "$_lr")
+            storage_units=$(jq -c '.storage_units' <<< "$_lr")
         else
             load_secs=null; data_size=null
             warn "no load record under ${LOAD_DIR}/ for ${SEARCHBENCH_DATASET}${SEARCHBENCH_BUILD:+ (build $SEARCHBENCH_BUILD)}; writing null load_time/data_size"
@@ -505,6 +597,8 @@ main() {
     local qtags_json="[" qtfirst=1
     local explains_json="[" exfirst=1
     local explain_analyzes_json="[" exafirst=1
+    local cpu_json="[" cpufirst=1
+    CPU_ROW_FILE=$(mktemp)
     local tg_id="" tg_task="" tg_filter="" tg_freq=""
 
     # Crash-safety: build JSON in .partial.json, rewrite after load and every
@@ -532,8 +626,15 @@ main() {
         [[ "$query" =~ ^[[:space:]]*-- ]] && continue
         log "==> Q${qnum}: ${query:0:80}..."
         local row
+        printf 'null' > "$CPU_ROW_FILE"
         row=$(run_one_query "$query" "$qnum")
         log "    Q${qnum} runs: $row"
+        if [[ "$SEARCHBENCH_CPU" == on ]]; then
+            local cpurow; cpurow=$(cat "$CPU_ROW_FILE"); [[ "$cpurow" == "[]" ]] && cpurow=null
+            log "    Q${qnum} cpu:  $cpurow"
+            [[ $cpufirst -eq 0 ]] && cpu_json+=","
+            cpufirst=0; cpu_json+=$'\n        '"$cpurow"
+        fi
         [[ $first -eq 0 ]] && result_json+=","
         first=0
         result_json+=$'\n        '"$row"

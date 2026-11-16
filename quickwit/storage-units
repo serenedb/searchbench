@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Count published splits, not transient cache/WAL files. Works for file:// and
+# object-storage index URIs: metadata, not a local-directory walk, is authoritative.
+set -euo pipefail
+: "${QW_PORT:=7280}"
+: "${QW_INDEX:=otel_logs}"
+curl -fsS --max-time 30 \
+    "http://127.0.0.1:${QW_PORT}/api/v1/indexes/${QW_INDEX}/splits?split_states=Published" \
+    | jq -ce '
+        if type == "object" and (.splits | type == "array") and
+           (.offset // 0) == 0 and .size == (.splits | length)
+        then {count: ([.splits[] | select(.split_state == "Published")] | length), unit: "splits"}
+        else error("incomplete or invalid split listing") end'

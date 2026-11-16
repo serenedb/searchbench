@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Recreate the index and bulk-ingest the corpus through the ES-compatible API.
+# Recreate the index and ingest the corpus through the native ingest API
+# (/api/v1/<index>/ingest), or the parquet bulk CLI with QW_INGEST=parquet.
 set -euo pipefail
 cd "$(dirname "$0")"
 : "${SEARCHBENCH_DATASET:=otel_logs_1b}"
+source config/dataset-defaults.sh
 : "${SEARCHBENCH_DATA_DIR:?SEARCHBENCH_DATA_DIR must be set}"
 : "${QW_PORT:=7280}"; : "${QW_INDEX:=otel_logs}"
 Q="http://127.0.0.1:${QW_PORT}"
@@ -14,14 +16,145 @@ fi
 shopt -s nullglob; files=( "$SEARCHBENCH_DATA_DIR"/part_*.parquet ); shopt -u nullglob
 [[ ${#files[@]} -gt 0 ]] || { echo "no part_*.parquet in $SEARCHBENCH_DATA_DIR" >&2; exit 1; }
 
+# Check an explicitly selected Rust client before deleting the existing index.
+if [[ "${QW_INGEST:-http}" != parquet ]]; then
+    case "${SEARCHBENCH_LOAD_CLIENT:-python}" in
+        python) ;;
+        rust)
+            qw_client="${QW_CLIENT_BIN:-$PWD/client/target/release/qw-parquet-ingest}"
+            [[ -x "$qw_client" ]] || { echo "[load] ERROR: Rust client missing: $qw_client; run ./install" >&2; exit 1; }
+            ;;
+        *) echo "SEARCHBENCH_LOAD_CLIENT must be rust or python" >&2; exit 1 ;;
+    esac
+fi
+
 echo "[load] recreating index ${QW_INDEX}"
 curl -fsS -X DELETE "$Q/api/v1/indexes/${QW_INDEX}" >/dev/null 2>&1 || true
 sleep 2
+# QW_SPLIT_NUM_DOCS overrides indexing_settings.split_num_docs_target (1M for
+# otel_logs_100m; otherwise the server default, 10M) -- the knob that sets how
+# many splits a merged index ends up with, and so
+# how many units of work a search fans out to.
+# QW_MERGE_POLICY=no_merge disables merges (the Parquet bulk load's recommended
+# setup: splits keep the time range of the row groups they were cut from).
+# QW_COMMIT_TIMEOUT_SECS / QW_HEAP_SIZE override the other two split-cut limits,
+# so that split_num_docs_target alone decides where a split is cut.
+# QW_VALIDATE_DOCS=off sets ingest_settings.validate_docs = false (and ./start
+# sets QW_DISABLE_DOCUMENT_VALIDATION on the server).
+# QW_MIN_SHARDS sets ingest_settings.min_shards: the ingest API opens at least that many
+# shards (each with its own indexing pipeline) from the start, instead of scaling up.
+"${SEARCHBENCH_PYTHON:-python3}" - "${QW_SPLIT_NUM_DOCS:-}" "${QW_MERGE_POLICY:-}" "${QW_COMMIT_TIMEOUT_SECS:-}" "${QW_HEAP_SIZE:-}" "${QW_VALIDATE_DOCS:-on}" "${QW_MIN_SHARDS:-}" "$SEARCHBENCH_DATASET" > /tmp/qw_index_config.$$.json <<'PY'
+import json, sys
+c = json.load(open("config/index_config.json"))
+s = c["indexing_settings"]
+docs, policy, commit, heap, validate, min_shards, dataset = sys.argv[1:8]
+if validate == "off": c.setdefault("ingest_settings", {})["validate_docs"] = False
+if min_shards: c.setdefault("ingest_settings", {})["min_shards"] = int(min_shards)
+if docs: s["split_num_docs_target"] = int(docs)
+if policy:
+    s["merge_policy"] = {"type": policy}
+    if dataset == "otel_logs_100m" and policy == "stable_log":
+        s["merge_policy"].update(min_level_num_docs=100000, merge_factor=10,
+                                 max_merge_factor=12, maturation_period="2days")
+if commit: s["commit_timeout_secs"] = int(commit)
+if heap: s.setdefault("resources", {})["heap_size"] = heap
+print(json.dumps(c))
+PY
+echo "[load] in-memory indexing: QW_ENABLE_IN_MEMORY_INDEXING=${QW_ENABLE_IN_MEMORY_INDEXING}"
+echo "[load] indexing_settings=$("${SEARCHBENCH_PYTHON:-python3}" -c 'import json,sys; c=json.load(open(sys.argv[1])); print(json.dumps(c["indexing_settings"]), "ingest_settings=" + json.dumps(c.get("ingest_settings", {})))' /tmp/qw_index_config.$$.json)"
 curl -fsS -X POST "$Q/api/v1/indexes" -H 'Content-Type: application/json' \
-     --data-binary @config/index_config.json >/dev/null
+     --data-binary @/tmp/qw_index_config.$$.json >/dev/null
+rm -f /tmp/qw_index_config.$$.json
 
+# Phase accounting (lib/load-phases.sh): sample running merges every 5s for the
+# whole load, so merges that overlap ingestion are counted too.
+source ../lib/load-phases.sh
+phases_start "curl -fsS -m 2 '$Q/metrics' | awk '/^quickwit_indexing_ongoing_merge_operations[{ ]/ {s += \$NF} END {print s+0}'"
+if [[ "${QW_INGEST:-http}" == parquet ]]; then
+    # QW_INGEST=parquet: Quickwit's Parquet bulk load (`quickwit tool local-ingest`,
+    # needs a build with the `parquet` feature): the CLI reads the parquet directly,
+    # runs N indexing pipelines in-process (no ingest API, no WAL) and merges until
+    # the merge policy proposes nothing. Two CLI generations:
+    #   legacy (PR #6843): `--input-format parquet`, `--batch-num-rows`, final report
+    #     with "Indexing" / "Indexing + merges" throughputs;
+    #   bulk (fmassot/parquet-local-ingest-simplify): a `.parquet` --input-path is
+    #     detected by extension, `--input-format` is rejected, no batch flag, no report.
+    # QW_PARQUET_CLI=auto (default) picks by probing `--help` for `--batch-num-rows`.
+    # It writes to the same data dir / metastore as the server, so the server is
+    # stopped meanwhile and restarted after; the count and settle checks below
+    # then run as for the HTTP path (they find nothing left to wait for).
+    ./stop
+    pq_env=(-e QW_DISABLE_TELEMETRY=1 -e "QW_ENABLE_IN_MEMORY_INDEXING=${QW_ENABLE_IN_MEMORY_INDEXING}")
+    [[ "${QW_CLUSTERING:-on}" == off ]] && pq_env+=(-e QW_DISABLE_DOCS_CLUSTERING=true)
+    pq_cfg=config/quickwit.yaml
+    if [[ "${QW_STORAGE:-local}" == s3 ]]; then pq_cfg=config/quickwit_s3.yaml; pq_env+=(-e "QW_S3_ROOT=${QW_S3_ROOT}" -e "AWS_REGION=${AWS_REGION:-us-east-1}"); fi
+    pq_image="${QW_IMAGE:-quickwit/quickwit:edge@sha256:34b9552eb09fa85785f529d888ed2a64df68d3e2241213710b74accf4023e8ff}"
+    pq_cli="${QW_PARQUET_CLI:-auto}"
+    if [[ "$pq_cli" == auto ]]; then
+        if docker run --rm "$pq_image" tool local-ingest --help 2>&1 | grep -q -- '--batch-num-rows'; then pq_cli=legacy; else pq_cli=bulk; fi
+    fi
+    case "$pq_cli" in legacy|bulk) ;; *) echo "QW_PARQUET_CLI must be auto, legacy or bulk, got: $pq_cli" >&2; exit 1 ;; esac
+    echo "[load] parquet local-ingest CLI: $pq_cli"
+    pq_args=(); [[ -n "${QW_PARQUET_PIPELINES:-}" ]] && pq_args+=(--num-pipelines "$QW_PARQUET_PIPELINES")
+    if [[ "$pq_cli" == legacy ]]; then
+        pq_args+=(--input-format parquet)
+        [[ -n "${QW_PARQUET_BATCH_ROWS:-}" ]] && pq_args+=(--batch-num-rows "$QW_PARQUET_BATCH_ROWS")
+    elif [[ -n "${QW_PARQUET_BATCH_ROWS:-}" ]]; then
+        echo "[load] ERROR: QW_PARQUET_BATCH_ROWS is not supported by this local-ingest CLI" >&2; exit 1
+    fi
+    pq_log=$(mktemp); pq_t0=$(phases_now); pq_merge_secs=0
+    for f in "${files[@]}"; do
+        # Each output line is stamped with the wall clock: the bulk CLI prints a stats line
+        # per second while its pipelines run, then drains merges before printing success.
+        docker run --rm --network host --ulimit nofile=65535:65535 "${pq_env[@]}" \
+            -v "${QW_DATA_DIR:-${PWD}/qw-data}:/quickwit/qwdata" \
+            -v "${PWD}/${pq_cfg}:/quickwit/config/quickwit.yaml:ro" \
+            -v "$(dirname "$f"):/data:ro" \
+            "$pq_image" tool local-ingest --index "$QW_INDEX" \
+            --input-path "file:///data/$(basename "$f")" "${pq_args[@]}" 2>&1 \
+            | while IFS= read -r line; do printf '%s\t%s\n' "$EPOCHREALTIME" "$line"; done \
+            | sed -E 's/\x1b\[[0-9;]*m//g' | tee -a "$pq_log" | cut -f2- \
+            | grep -E "^❯|^✔|^✘|report|Rows|bytes|Docs|Indexing|Splits|restarts|Settings|Merge policy|Parquet file|rror" || true
+        [[ ${PIPESTATUS[0]} -eq 0 ]] || { echo "[load] ERROR: parquet local-ingest failed on $f" >&2; exit 1; }
+        pq_file_end=$(phases_now)
+        if [[ "$pq_cli" == legacy ]]; then
+            # Seconds spent merging after indexing = total - indexing, from the report's throughputs.
+            pq_merge_secs=$(cut -f2- "$pq_log" | awk -v acc="$pq_merge_secs" '
+                /^ *Docs:/ {gsub(",", "", $2); docs = $2}
+                /^ *Indexing:/ {split($0, a, ", "); gsub(/[^0-9.]/, "", a[2]); ix = docs / a[2]}
+                /^ *Indexing \+ merges:/ {split($0, a, ", "); gsub(/[^0-9.]/, "", a[2]); tot = docs / a[2]}
+                END {printf "%.1f", acc + (tot - ix)}')
+        else
+            # Merge drain = from the last per-second stats line (pipelines exited) to the end.
+            pq_index_end=$(awk -F'\t' '$2 ~ /Num docs/ {t = $1} END {print t}' "$pq_log")
+            [[ -n "$pq_index_end" ]] || { echo "[load] ERROR: no indexing statistics in local-ingest output" >&2; exit 1; }
+            pq_merge_secs=$(awk -v acc="$pq_merge_secs" -v e="$pq_file_end" -v i="$pq_index_end" 'BEGIN{d = e - i; if (d < 0) d = 0; printf "%.1f", acc + d}')
+        fi
+        : > "$pq_log"
+    done
+    rm -f "$pq_log"; pq_t1=$(phases_now)
+    # Phases: ingest = the CLI run minus its final merge drain; merge_after = the drain.
+    phases_mark ingest_end "$(awk -v t="$pq_t1" -v m="$pq_merge_secs" 'BEGIN{printf "%.3f", t - m}')"
+    phases_mark merges_start "$_PH_ingest_end"; phases_mark merges_end "$pq_t1"; pq_fixed_phases=1
+    ./start >/dev/null
+else
+if [[ "${SEARCHBENCH_LOAD_CLIENT:-python}" == rust ]]; then
+    # SEARCHBENCH_LOAD_CLIENT=rust: client/ (build it with client/build.sh). Same
+    # documents and requests as ingest.py --order queue, converted with arrow_json
+    # instead of Python (~20k docs/s per process), so the client doesn't cap the load.
+    client_args=(); for f in "${files[@]}"; do client_args+=(--file "$f"); done
+    # Optional docs per request (client default 2000). Larger requests amortize the
+    # ingester's per-persist WAL lock; Quickwit rejects bodies above 32 MiB.
+    [[ -z "${SEARCHBENCH_LOAD_BATCH_SIZE:-}" ]] || client_args+=(--batch-size "$SEARCHBENCH_LOAD_BATCH_SIZE")
+    QW_URL="$Q" QW_INDEX="$QW_INDEX" "$qw_client" "${client_args[@]}" \
+        --threads "${SEARCHBENCH_LOAD_PROCESSES:-16}" --backoff-max "${SEARCHBENCH_LOAD_BACKOFF_MAX:-30}" \
+        --max-retries "${SEARCHBENCH_LOAD_MAX_RETRIES:-8}" \
+        --request-timeout-secs "${SEARCHBENCH_LOAD_REQUEST_TIMEOUT:-60}"
+else
 QW_URL="$Q" QW_INDEX="$QW_INDEX" \
   "${SEARCHBENCH_PYTHON:-python3}" ./ingest.py --local-dir "$SEARCHBENCH_DATA_DIR" --files "${#files[@]}"
+fi
+fi
 
 # Quickwit commits on a timer (commit_timeout_secs in the index config), so
 # freshly-posted documents are not searchable the instant the bulk call returns.
@@ -44,23 +177,86 @@ try:
     t=json.load(sys.stdin).get('hits',{}).get('total',{}); print(t.get('value',0) if isinstance(t,dict) else t)
 except Exception: print(0)")
     if [[ "$n" == "$last" ]]; then stable=$((stable+1)); else stable=0; fi
-    [[ "$stable" -ge 6 && "$n" != "0" ]] && break
+    # Done once every document is searchable. A shorter plateau only ends the
+    # wait if no commit can still be pending: with a long commit_timeout_secs
+    # the last commit lands up to that long after the last request.
+    [[ "$n" == "$expected" ]] && break
+    [[ "$stable" -ge 6 && "$n" != "0" && $((stable * 5)) -gt "${QW_COMMIT_TIMEOUT_SECS:-30}" ]] && break
     last="$n"; sleep 5
 done
 
-# Quickwit's ingest v2 pipeline DROPS records under concurrent bulk load while
-# still returning HTTP 200 with errors:false and no per-item error -- 16
-# concurrent requests lost 10.4% of the corpus, visible only as
-# "failed to fetch records from ingester" in the server log. Neither the status
-# code nor the response body is evidence the data landed, so verify the count
-# and fail loudly rather than benchmarking a partial corpus.
+# A successful response is not proof that every document landed: compare the
+# searchable count with the parquet row count and fail rather than benchmark a
+# partial corpus.
 if [[ "$n" != "$expected" ]]; then
     echo "[load] ERROR: indexed ${n} documents, expected ${expected} (lost $((expected-n)))." >&2
-    echo "[load]        Documents were lost. The count check exists because neither" >&2
-    echo "[load]        the status code nor the body reports it. If ingest.py was" >&2
-    echo "[load]        pointed back at /api/v1/_elastic/_bulk, that shim is the" >&2
-    echo "[load]        known cause; the native /api/v1/<index>/ingest endpoint is" >&2
-    echo "[load]        lossless at 16 processes. See README." >&2
+    echo "[load]        Check the server log. Ingest must use /api/v1/<index>/ingest," >&2
+    echo "[load]        not the /api/v1/_elastic/_bulk endpoint (see README, Load)." >&2
     exit 1
 fi
 echo "[load] ${QW_INDEX} documents=${n}"
+# The loop exits as soon as the exact expected count is observed. It does not
+# wait for six stable polls on success, so do not invent/subtract a 30s check
+# window. Commit visibility waiting belongs to ingest; only the later merge
+# quiet window is settle-detection overhead.
+commit_check=0
+if [[ -z "${pq_fixed_phases:-}" ]]; then
+    phases_mark ingest_end
+    phases_mark merges_start
+fi
+
+# Wait for background merges to settle. Commits produce many small splits that
+# the merge policy keeps folding together after the last document lands.
+# Starting the queries then would (a) race merge CPU/IO against the timed
+# queries and (b) let the split count -- which search cost scales with -- change
+# mid-run. "Settled" = no merge running (ongoing_merge_operations gauge; the
+# pending gauge is always 0 in practice, so it is not used) AND the set of
+# published split ids unchanged, for QW_MERGE_QUIET_SECS consecutive seconds.
+# The split-set condition does not rely on metrics at all: a merge that starts
+# and publishes inside the window resets it. Part of load_time, like any
+# engine's post-ingest compaction.
+split_state() {  # "<n_splits> <sha of sorted split ids> <layout summary>"
+    curl -fsS "$Q/api/v1/indexes/${QW_INDEX}/splits?split_states=Published" \
+    | "${SEARCHBENCH_PYTHON:-python3}" -c '
+import sys, json, hashlib, collections
+s = json.load(sys.stdin)["splits"]
+ids = "".join(sorted(x["split_id"] for x in s))
+mat = collections.Counter("mature" if (x.get("maturity") or {}).get("type") == "mature" else "immature" for x in s)
+docs = sum(x["num_docs"] for x in s)
+ops = dict(sorted(collections.Counter(x["num_merge_ops"] for x in s).items()))
+print(len(s), hashlib.sha1(ids.encode()).hexdigest()[:12],
+      "docs=%d mature=%d immature=%d merge_ops=%s" % (docs, mat["mature"], mat["immature"], ops))'
+}
+if [[ "${QW_WAIT_MERGES:-yes}" == yes ]]; then
+    case "$SEARCHBENCH_DATASET" in
+        otel_logs_100k|otel_logs_1m|otel_logs_10m) : "${QW_MERGE_QUIET_SECS:=45}" ;;   # > one 30s commit cycle
+    esac
+    : "${QW_MERGE_QUIET_SECS:=180}"; : "${QW_MERGE_MAX_SECS:=14400}"
+    echo "[load] waiting for merges to settle (${QW_MERGE_QUIET_SECS}s quiet: no merge running, split set unchanged)"
+    t0=$(date +%s); quiet_since=$t0; quiet_since_f=$(phases_now); last_sig=""; last_report=0
+    while :; do
+        now=$(date +%s)
+        ongoing=$(curl -fsS "$Q/metrics" | awk '/^quickwit_indexing_ongoing_merge_operations[{ ]/ {s += $NF} END {print s+0}')
+        read -r n sig layout < <(split_state)
+        if [[ "$ongoing" != 0 || "$sig" != "$last_sig" ]]; then quiet_since=$now; quiet_since_f=$(phases_now); fi
+        last_sig="$sig"
+        if (( now - last_report >= 60 )); then
+            echo "[load]   +$((now - t0))s splits=${n} ongoing_merges=${ongoing} quiet=$((now - quiet_since))s ${layout}"
+            last_report=$now
+        fi
+        (( now - quiet_since >= QW_MERGE_QUIET_SECS )) && { [[ -n "${pq_fixed_phases:-}" ]] || phases_mark merges_end "$quiet_since_f"; break; }
+        (( now - t0 > QW_MERGE_MAX_SECS )) && { echo "[load] ERROR: merges not settled after ${QW_MERGE_MAX_SECS}s" >&2; exit 1; }
+        sleep 5
+    done
+    echo "[load] merges settled after $(( $(date +%s) - t0 - QW_MERGE_QUIET_SECS ))s (+${QW_MERGE_QUIET_SECS}s quiet window)"
+fi
+read -r n sig layout < <(split_state)
+echo "[load] final split layout: splits=${n} ${layout}"
+# From here on ./start serves queries from a searcher + metastore node.
+touch "${QW_DATA_DIR:-${PWD}/qw-data}/.searchbench-loaded"
+phases_finish $(( ${commit_check:-0} + ${QW_MERGE_QUIET_SECS:-0} ))
+# The merge sampler polls the server, which is down while the CLI runs: its
+# merge_busy would miss the CLI's merges, so drop it in parquet mode.
+if [[ -n "${pq_fixed_phases:-}" && -s "${SEARCHBENCH_LOAD_PHASES_FILE:-}" ]]; then
+    "${SEARCHBENCH_PYTHON:-python3}" -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); [d.pop(k,None) for k in ("merge_busy","merge_work")]; d["ingest_mode"]="parquet"; json.dump(d,open(p,"w"))' "$SEARCHBENCH_LOAD_PHASES_FILE"
+fi
