@@ -1,0 +1,10 @@
+local.env
+remote.staged.env
+run.env
+STAMP
+source.tar.gz
+source.sha256
+source.commit
+known_hosts
+resources-*/
+recovered-*/
