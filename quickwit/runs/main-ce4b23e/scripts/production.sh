@@ -6,6 +6,8 @@
 #              -> $ROUNDS query-only rounds (restart + page-cache drop per query, 3 tries, 60 s cap)
 #              -> recent-query ground truth (lib/check_recent.py) -> evidence pushed to S3.
 # A failed scale is recorded and the next one still runs.
+# Second pass (production-2): SKIP_SMOKE=yes, REUSE_LOAD_SCALES lists scales whose S3 index (and load
+# records in $E/<ds>/load-records) are reused (query rounds only), EVIDENCE_SUFFIX names the rounds' dir.
 set -Eeuo pipefail
 cd /srv/qw
 source ./run.env
@@ -34,7 +36,9 @@ sampler() {   # $1 out file, $2 container: every 10 s ingest/indexing counters, 
     done > "$1"
 }
 
+: "${SKIP_SMOKE:=no}" "${REUSE_LOAD_SCALES:=}" "${EVIDENCE_SUFFIX:=}"
 # ---------- 0) smoke ----------
+if [[ $SKIP_SMOKE != yes ]]; then
 note "smoke start"
 S=$E/smoke; mkdir -p "$S"
 SMK=$DATA_MNT/corpus-smoke/otel_logs_1b; mkdir -p "$SMK"
@@ -66,25 +70,26 @@ jq -e '.[0].Config.Env | index("QW_DISABLE_DOCUMENT_VALIDATION=true")' "$S/conta
 (( ok == 1 )) || { note "SMOKE FAILED"; push; exit 1; }
 rm -rf $DATA_MNT/qw-smoke $DATA_MNT/corpus-smoke
 note "smoke ok (${smoke_rows} docs)"; push
+fi
 
 # ---------- per scale ----------
 fetch_corpus() {   # $1 dataset -> $SEARCHBENCH_DATA_ROOT/$1/part_*.parquet, each checked against S3 size + ETag
     local ds=$1 dir=$SEARCHBENCH_DATA_ROOT/$1 k
     mkdir -p "$dir"
-    aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "searchbench/data/$ds/part_" --no-paginate > "$E/$ds/corpus-listing.json"
+    aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "searchbench/data/$ds/part_" --no-paginate > "$E/$ds$EVIDENCE_SUFFIX/corpus-listing.json"
     local t0=$(date +%s)
-    for k in $(jq -r '.Contents[].Key' "$E/$ds/corpus-listing.json"); do
+    for k in $(jq -r '.Contents[].Key' "$E/$ds$EVIDENCE_SUFFIX/corpus-listing.json"); do
         aws s3 cp --only-show-errors "s3://$BUCKET/$k" "$dir/${k##*/}"
     done
     local t1=$(date +%s)
-    jq -c '.Contents[] | [.Key, .Size, .ETag]' "$E/$ds/corpus-listing.json" | while read -r row; do
+    jq -c '.Contents[] | [.Key, .Size, .ETag]' "$E/$ds$EVIDENCE_SUFFIX/corpus-listing.json" | while read -r row; do
         k=$(jq -r '.[0]' <<<"$row"); n=$(jq -r '.[1]' <<<"$row"); etag=$(jq -r '.[2]' <<<"$row")
         [[ $(stat -c %s "$dir/${k##*/}") == "$n" ]] || { echo "size mismatch $k"; exit 1; }
         aws s3api head-object --bucket "$BUCKET" --key "$k" | jq -e --arg e "$etag" --argjson n "$n" '.ETag==$e and .ContentLength==$n' >/dev/null
     done
     rows=$($SEARCHBENCH_PYTHON -c "import glob,pyarrow.parquet as pq;print(sum(pq.ParquetFile(f).metadata.num_rows for f in glob.glob('$dir/part_*.parquet')))")
-    jq -n --arg ds "$ds" --argjson dl $((t1 - t0)) --argjson rows "$rows" --argjson files "$(jq '.Contents|length' "$E/$ds/corpus-listing.json")" \
-        '{dataset:$ds, files:$files, rows:$rows, download_seconds:$dl, size_etag_verified:true}' > "$E/$ds/corpus.json"
+    jq -n --arg ds "$ds" --argjson dl $((t1 - t0)) --argjson rows "$rows" --argjson files "$(jq '.Contents|length' "$E/$ds$EVIDENCE_SUFFIX/corpus-listing.json")" \
+        '{dataset:$ds, files:$files, rows:$rows, download_seconds:$dl, size_etag_verified:true}' > "$E/$ds$EVIDENCE_SUFFIX/corpus.json"
     echo "$rows"
 }
 
@@ -93,7 +98,8 @@ run_scale() {   # $1 dataset
     local D=$DATA_MNT/qw-$BOX-$short
     local C=searchbench-qw-$BOX-$short
     local BUILD=main-${QW_EXPECTED_REVISION:0:7}-$BOX
-    local SE=$E/$ds; mkdir -p "$SE"
+    local LE=$E/$ds SE=$E/$ds$EVIDENCE_SUFFIX; mkdir -p "$LE" "$SE"
+    local reuse=no; [[ " $REUSE_LOAD_SCALES " == *" $ds "* ]] && reuse=yes
     # lib/benchmark.sh appends the dataset to SEARCHBENCH_DATA_DIR: pass the root, keep the full path in CORPUS.
     export SEARCHBENCH_DATASET=$ds SEARCHBENCH_DATA_DIR=$SEARCHBENCH_DATA_ROOT
     local CORPUS=$SEARCHBENCH_DATA_ROOT/$ds
@@ -102,25 +108,35 @@ run_scale() {   # $1 dataset
     note "$ds: corpus fetch"
     local rows; rows=$(fetch_corpus "$ds")
     export EXPECTED_ROWS=$rows
+    if [[ $reuse == yes ]]; then
+    note "$ds: corpus ok ($rows rows); reusing the S3 index and load records of $LE (build $BUILD)"
+    mkdir -p "$D" results/load
+    cp -a "$LE/load-records/." results/load/
+    ls results/load/*."$BUILD".json >/dev/null
+    else
     note "$ds: corpus ok ($rows rows); load (build $BUILD)"
-    df -B1 $DATA_MNT > "$SE/df-before-load.txt"
-    env | grep -E '^(SEARCHBENCH_|QW_|EXPECTED_ROWS|AWS_REGION)' | sort > "$SE/load-environment.txt"
+    df -B1 $DATA_MNT > "$LE/df-before-load.txt"
+    env | grep -E '^(SEARCHBENCH_|QW_|EXPECTED_ROWS|AWS_REGION)' | sort > "$LE/load-environment.txt"
     sync; echo 3 > /proc/sys/vm/drop_caches
-    sampler "$SE/load.samples" "$C" & local smp=$!
+    sampler "$LE/load.samples" "$C" & local smp=$!
     set +e
     SEARCHBENCH_QUERIES=$E/empty.queries SEARCHBENCH_BUILD=$BUILD \
-        SEARCHBENCH_RESULTS=$SE/load-run.json \
-        bash ./benchmark.sh --index --version "$BUILD" > "$SE/load-benchmark.log" 2>&1
+        SEARCHBENCH_RESULTS=$LE/load-run.json \
+        bash ./benchmark.sh --index --version "$BUILD" > "$LE/load-benchmark.log" 2>&1
     local brc=$?; set -e
     kill "$smp" 2>/dev/null || true
-    df -B1 $DATA_MNT > "$SE/df-after-load.txt"
-    ./storage-units > "$SE/storage-units.json" 2>&1 || true
-    curl -fsS "http://127.0.0.1:7280/api/v1/indexes/otel_logs/splits?split_states=Published" > "$SE/splits.json" 2>/dev/null || true
+    df -B1 $DATA_MNT > "$LE/df-after-load.txt"
     docker stop -t 60 "$C" >/dev/null 2>&1 || true
-    save_container "$C" "$SE"; mv "$SE/server.log" "$SE/load-server.log"
-    cp -a results/load/. "$SE/load-records/" 2>/dev/null || { mkdir -p "$SE/load-records"; cp -a results/load/. "$SE/load-records/"; }
+    save_container "$C" "$LE"; mv "$LE/server.log" "$LE/load-server.log"
+    cp -a results/load/. "$LE/load-records/" 2>/dev/null || { mkdir -p "$LE/load-records"; cp -a results/load/. "$LE/load-records/"; }
     note "$ds: load rc=$brc"; push
     (( brc == 0 )) || return 1
+    # Published splits from the metastore (the load's container is already stopped here).
+    if [[ $BOX == s3 ]]; then
+        aws s3 cp --only-show-errors "$QW_S3_ROOT/indexes/otel_logs/metastore.json" "$LE/metastore.json" || true
+        jq -c '[.splits[] | select(.split_state=="Published")] | {count: length, unit: "splits", docs: (map(.split_metadata.num_docs // .num_docs) | add)}' "$LE/metastore.json" > "$LE/storage-units.json" 2>&1 || true
+    fi
+    fi
     touch "$D/.searchbench-loaded"   # ./start: searcher + metastore from now on
     local rounds_done=0
     for r in $(seq 1 "$ROUNDS"); do
@@ -129,7 +145,7 @@ run_scale() {   # $1 dataset
         if (( r > 1 && WORK_CUTOFF_EPOCH - $(date +%s) < 5 * 3600 )); then
             note "$ds: round $r skipped (budget)"; echo "$ds r$r skipped: $(( (WORK_CUTOFF_EPOCH - $(date +%s)) / 60 )) min left" >> "$E/skipped-rounds.txt"; break
         fi
-        local V=main-${QW_EXPECTED_REVISION:0:7}-$BOX-r$r R=$SE/r$r; mkdir -p "$R"
+        local V=main-${QW_EXPECTED_REVISION:0:7}-$BOX${EVIDENCE_SUFFIX}-r$r R=$SE/r$r; mkdir -p "$R"
         note "$ds: round $r"
         env | grep -E '^(SEARCHBENCH_|QW_|AWS_REGION)' | sort > "$R/environment.txt"
         sha256sum queries.dsl > "$R/queries-sha256.txt"
@@ -147,7 +163,7 @@ run_scale() {   # $1 dataset
         rounds_done=$r
     done
     # Ground truth for the time-sorted recent queries: every corpus file can hold the newest documents.
-    local logs=(); for r in $(seq 1 "$rounds_done"); do logs+=("$SE/r$r/quickwit_main-${QW_EXPECTED_REVISION:0:7}-$BOX-r${r}_${ds}.results.log"); done
+    local logs=(); for r in $(seq 1 "$rounds_done"); do logs+=("$SE/r$r/quickwit_main-${QW_EXPECTED_REVISION:0:7}-$BOX${EVIDENCE_SUFFIX}-r${r}_${ds}.results.log"); done
     for f in "$CORPUS"/part_*.parquet; do
         $SEARCHBENCH_PYTHON ../lib/check_recent.py "$f" "${logs[@]}" > "$SE/check-recent-$(basename "$f" .parquet).txt" 2>&1 || true
     done

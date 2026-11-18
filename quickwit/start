@@ -62,7 +62,13 @@ cfg_src="$QW_CONFIG_FILE"
 # QW_FAST_FIELD_CACHE overrides searcher.fast_field_cache_capacity (0 = off in the
 # configs, so hot tries re-read fast fields from storage like the cold one); e.g.
 # 16GiB restores the setting used by the runs before 2026-10-31.
-if [[ -n "${QW_SHARD_THROUGHPUT_LIMIT:-}${QW_INGEST_QUEUE_MEMORY:-}${QW_INGEST_QUEUE_DISK:-}${QW_FAST_FIELD_CACHE:-}" ]]; then
+# QW_STORAGE_CACHE=<memory>/<disk> writes searcher.storage_cache (Quickwit main from
+# #6962, 2026-11-17: one cache for footers, hotcache, fast fields and every other
+# split range, which replaces the fast-field and footer caches). With the legacy
+# keys alone it defaults to their sum (0 + 500 MB footer default), holding data too,
+# so hot tries made no storage reads at 100M. 0/0 disables it. Leave it unset for
+# builds before #6962, which do not know the key.
+if [[ -n "${QW_SHARD_THROUGHPUT_LIMIT:-}${QW_INGEST_QUEUE_MEMORY:-}${QW_INGEST_QUEUE_DISK:-}${QW_FAST_FIELD_CACHE:-}${QW_STORAGE_CACHE:-}" ]]; then
     cfg_out="${QW_DATA_DIR}/.quickwit-node.yaml"
     cp "$cfg_src" "$cfg_out"
     if [[ -n "${QW_SHARD_THROUGHPUT_LIMIT:-}" ]]; then
@@ -76,6 +82,11 @@ if [[ -n "${QW_SHARD_THROUGHPUT_LIMIT:-}${QW_INGEST_QUEUE_MEMORY:-}${QW_INGEST_Q
     if [[ -n "${QW_FAST_FIELD_CACHE:-}" ]]; then
         sed -i "s/^  fast_field_cache_capacity: .*/  fast_field_cache_capacity: ${QW_FAST_FIELD_CACHE}/" "$cfg_out"
         grep -q "^  fast_field_cache_capacity: ${QW_FAST_FIELD_CACHE}\$" "$cfg_out" || { echo "failed to set fast_field_cache_capacity" >&2; exit 1; }
+    fi
+    if [[ -n "${QW_STORAGE_CACHE:-}" ]]; then
+        [[ "$QW_STORAGE_CACHE" =~ ^[0-9A-Za-z]+/[0-9A-Za-z]+$ ]] || { echo "QW_STORAGE_CACHE must be <memory>/<disk>" >&2; exit 1; }
+        sed -i "s#^searcher:\$#searcher:\n  storage_cache:\n    memory_capacity: ${QW_STORAGE_CACHE%/*}\n    disk_capacity: ${QW_STORAGE_CACHE#*/}#" "$cfg_out"
+        grep -q "^    memory_capacity: ${QW_STORAGE_CACHE%/*}\$" "$cfg_out" || { echo "failed to set storage_cache" >&2; exit 1; }
     fi
     if [[ -n "${QW_INGEST_QUEUE_DISK:-}" ]]; then
         sed -i "s/^  max_queue_disk_usage: .*/  max_queue_disk_usage: ${QW_INGEST_QUEUE_DISK}/" "$cfg_out"
