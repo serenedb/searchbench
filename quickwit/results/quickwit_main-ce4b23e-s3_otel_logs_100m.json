@@ -1,0 +1,1499 @@
+{
+  "system": "Quickwit (main-ce4b23e-s3)",
+  "version": "0.9.3-nightly (ce4b23e)",
+  "os": "Ubuntu 24.04.5 LTS",
+  "date": "2026-11-18",
+  "dataset": "otel_logs_100m",
+  "build": "main-ce4b23e-s3",
+  "tags": [
+    "Rust",
+    "Tantivy",
+    "REST",
+    "ES-compatible"
+  ],
+  "load_time": 463.287,
+  "data_size": 4527428038,
+  "storage_units": {
+    "count": 13,
+    "unit": "splits"
+  },
+  "query_tags": [
+    {
+      "id": "Q01",
+      "task": "count",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q02",
+      "task": "count",
+      "filter": "term",
+      "freq": "lo"
+    },
+    {
+      "id": "Q03",
+      "task": "count",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q04",
+      "task": "count",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q05",
+      "task": "count",
+      "filter": "and",
+      "freq": "lo"
+    },
+    {
+      "id": "Q06",
+      "task": "count",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q07",
+      "task": "count",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q08",
+      "task": "count",
+      "filter": "or",
+      "freq": "mid"
+    },
+    {
+      "id": "Q09",
+      "task": "count",
+      "filter": "or,minmatch",
+      "freq": "hi"
+    },
+    {
+      "id": "Q10",
+      "task": "count",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q11",
+      "task": "count",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q12",
+      "task": "count",
+      "filter": "phrase",
+      "freq": "lo"
+    },
+    {
+      "id": "Q13",
+      "task": "count",
+      "filter": "phrase,proximity",
+      "freq": "hi"
+    },
+    {
+      "id": "Q14",
+      "task": "count",
+      "filter": "phrase,or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q15",
+      "task": "count",
+      "filter": "phrase,and",
+      "freq": "mid"
+    },
+    {
+      "id": "Q16",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q17",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q18",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "mid"
+    },
+    {
+      "id": "Q19",
+      "task": "count",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q20",
+      "task": "count",
+      "filter": "prefix",
+      "freq": "mid"
+    },
+    {
+      "id": "Q21",
+      "task": "count",
+      "filter": "prefix",
+      "freq": "hi"
+    },
+    {
+      "id": "Q22",
+      "task": "count",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q23",
+      "task": "count",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q24",
+      "task": "count",
+      "filter": "fuzzy,prefix",
+      "freq": "mid"
+    },
+    {
+      "id": "Q25",
+      "task": "count",
+      "filter": "like",
+      "freq": "mid"
+    },
+    {
+      "id": "Q26",
+      "task": "count",
+      "filter": "like",
+      "freq": "hi"
+    },
+    {
+      "id": "Q27",
+      "task": "count",
+      "filter": "like",
+      "freq": "mid"
+    },
+    {
+      "id": "Q28",
+      "task": "count",
+      "filter": "and,negation",
+      "freq": "hi"
+    },
+    {
+      "id": "Q29",
+      "task": "count",
+      "filter": "or,negation",
+      "freq": "hi"
+    },
+    {
+      "id": "Q30",
+      "task": "count",
+      "filter": "term,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q31",
+      "task": "count",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q32",
+      "task": "count",
+      "filter": "or,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q33",
+      "task": "top_k",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q34",
+      "task": "top_k",
+      "filter": "term",
+      "freq": "mid"
+    },
+    {
+      "id": "Q35",
+      "task": "top_k",
+      "filter": "term",
+      "freq": "lo"
+    },
+    {
+      "id": "Q36",
+      "task": "top_k",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q37",
+      "task": "top_k",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q38",
+      "task": "top_k",
+      "filter": "and",
+      "freq": "lo"
+    },
+    {
+      "id": "Q39",
+      "task": "top_k",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q40",
+      "task": "top_k",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q41",
+      "task": "top_k",
+      "filter": "or",
+      "freq": "mid"
+    },
+    {
+      "id": "Q42",
+      "task": "top_k",
+      "filter": "or,minmatch",
+      "freq": "hi"
+    },
+    {
+      "id": "Q43",
+      "task": "top_k",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q44",
+      "task": "top_k",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q45",
+      "task": "top_k",
+      "filter": "phrase",
+      "freq": "lo"
+    },
+    {
+      "id": "Q46",
+      "task": "top_k",
+      "filter": "regexp",
+      "freq": "mid"
+    },
+    {
+      "id": "Q47",
+      "task": "top_k",
+      "filter": "prefix",
+      "freq": "hi"
+    },
+    {
+      "id": "Q48",
+      "task": "top_k",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q49",
+      "task": "top_k",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q50",
+      "task": "top_k",
+      "filter": "like",
+      "freq": "mid"
+    },
+    {
+      "id": "Q51",
+      "task": "top_k",
+      "filter": "phrase,or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q52",
+      "task": "top_k",
+      "filter": "and,negation",
+      "freq": "hi"
+    },
+    {
+      "id": "Q53",
+      "task": "top_k",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q54",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q55",
+      "task": "group_by",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q56",
+      "task": "group_by",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q57",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q58",
+      "task": "group_by",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q59",
+      "task": "group_by",
+      "filter": "fuzzy",
+      "freq": "mid"
+    },
+    {
+      "id": "Q60",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q61",
+      "task": "group_by",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q62",
+      "task": "group_by",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q63",
+      "task": "group_by",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q64",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q65",
+      "task": "group_by",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q66",
+      "task": "group_by",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q67",
+      "task": "group_by",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q68",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q69",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q70",
+      "task": "recent",
+      "filter": "term,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q71",
+      "task": "recent",
+      "filter": "phrase,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q72",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q73",
+      "task": "recent",
+      "filter": "window",
+      "freq": ""
+    },
+    {
+      "id": "Q74",
+      "task": "recent",
+      "filter": "regexp,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q75",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q76",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q77",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q78",
+      "task": "recent",
+      "filter": "term,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q79",
+      "task": "recent",
+      "filter": "phrase,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q80",
+      "task": "recent",
+      "filter": "and,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q81",
+      "task": "recent",
+      "filter": "window",
+      "freq": ""
+    },
+    {
+      "id": "Q82",
+      "task": "recent",
+      "filter": "regexp,window",
+      "freq": "hi"
+    },
+    {
+      "id": "Q83",
+      "task": "recent",
+      "filter": "or,window",
+      "freq": "mid"
+    },
+    {
+      "id": "Q84",
+      "task": "join",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q85",
+      "task": "join",
+      "filter": "or",
+      "freq": "hi"
+    },
+    {
+      "id": "Q86",
+      "task": "join",
+      "filter": "phrase",
+      "freq": "mid"
+    },
+    {
+      "id": "Q87",
+      "task": "join",
+      "filter": "regexp",
+      "freq": "hi"
+    },
+    {
+      "id": "Q88",
+      "task": "join",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q89",
+      "task": "join",
+      "filter": "or",
+      "freq": "mid"
+    },
+    {
+      "id": "Q90",
+      "task": "join",
+      "filter": "and",
+      "freq": "hi"
+    },
+    {
+      "id": "Q91",
+      "task": "join",
+      "filter": "term",
+      "freq": "hi"
+    },
+    {
+      "id": "Q92",
+      "task": "join",
+      "filter": "prefix",
+      "freq": "hi"
+    }
+  ],
+  "comment": "Per-query, per-try median of 3 rounds (2026-11-18 13:08:11 to 2026-11-18 13:24:53 UTC); rounds in runs/main-ce4b23e/otel_logs_100m-sc0/. Quickwit main ce4b23e (2026-11-17), built on the box from Quickwit's Dockerfile; m8gd.4xlarge, index and metastore on S3 (same region), WAL on the instance-store NVMe; settings of the published Datadog BYOC run (runs/hippo-20261105). storage_cache 0/0: no storage cache, every try reads the splits from S3.",
+  "result": [
+    [
+      0.143516,
+      0.115152,
+      0.112431
+    ],
+    [
+      0.192026,
+      0.135897,
+      0.098172
+    ],
+    [
+      0.187681,
+      0.130426,
+      0.13842
+    ],
+    [
+      0.211476,
+      0.248032,
+      0.199589
+    ],
+    [
+      0.201968,
+      0.158409,
+      0.132363
+    ],
+    [
+      0.175553,
+      0.135082,
+      0.110767
+    ],
+    [
+      0.183858,
+      0.124845,
+      0.106861
+    ],
+    [
+      0.210895,
+      0.145088,
+      0.14833
+    ],
+    [
+      0.282501,
+      0.243668,
+      0.298633
+    ],
+    [
+      0.187485,
+      0.141809,
+      0.15398
+    ],
+    [
+      0.335699,
+      0.204161,
+      0.17567
+    ],
+    [
+      0.425069,
+      0.16208,
+      0.158441
+    ],
+    [
+      0.199244,
+      0.142919,
+      0.159807
+    ],
+    [
+      0.230549,
+      0.273227,
+      0.291682
+    ],
+    [
+      0.193991,
+      0.174571,
+      0.152977
+    ],
+    [
+      0.213825,
+      0.161708,
+      0.152359
+    ],
+    [
+      0.150468,
+      0.128709,
+      0.114284
+    ],
+    [
+      0.155797,
+      0.110951,
+      0.123136
+    ],
+    [
+      0.185721,
+      0.153922,
+      0.137157
+    ],
+    [
+      0.157517,
+      0.170564,
+      0.228196
+    ],
+    [
+      0.166755,
+      0.145268,
+      0.117035
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      0.155282,
+      0.114285,
+      0.154194
+    ],
+    [
+      1.217949,
+      1.185002,
+      1.185524
+    ],
+    [
+      1.020474,
+      1.020868,
+      0.990955
+    ],
+    [
+      0.192918,
+      0.122381,
+      0.132322
+    ],
+    [
+      0.188472,
+      0.139693,
+      0.137254
+    ],
+    [
+      0.143766,
+      0.128542,
+      0.135987
+    ],
+    [
+      0.216249,
+      0.134804,
+      0.120799
+    ],
+    [
+      0.207278,
+      0.13456,
+      0.132875
+    ],
+    [
+      0.526022,
+      0.387554,
+      0.346126
+    ],
+    [
+      0.412473,
+      0.346943,
+      0.33081
+    ],
+    [
+      0.33935,
+      0.304642,
+      0.305431
+    ],
+    [
+      0.367969,
+      0.310582,
+      0.314105
+    ],
+    [
+      0.374142,
+      0.465333,
+      0.338483
+    ],
+    [
+      0.356689,
+      0.2986,
+      0.329493
+    ],
+    [
+      0.401475,
+      0.401106,
+      0.357389
+    ],
+    [
+      0.696654,
+      0.375782,
+      0.403014
+    ],
+    [
+      0.436882,
+      0.316921,
+      0.334784
+    ],
+    [
+      0.458461,
+      0.428282,
+      0.419606
+    ],
+    [
+      0.389202,
+      0.328239,
+      0.380192
+    ],
+    [
+      0.395289,
+      0.367113,
+      0.349588
+    ],
+    [
+      0.485051,
+      0.317948,
+      0.318136
+    ],
+    [
+      0.382751,
+      0.340891,
+      0.325468
+    ],
+    [
+      0.397608,
+      0.339702,
+      0.368472
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      0.429324,
+      0.3293,
+      0.317752
+    ],
+    [
+      0.426909,
+      0.361167,
+      0.365793
+    ],
+    [
+      0.705842,
+      0.39913,
+      0.391525
+    ],
+    [
+      0.447843,
+      0.326321,
+      0.341926
+    ],
+    [
+      0.253142,
+      0.147981,
+      0.132861
+    ],
+    [
+      0.169989,
+      0.118179,
+      0.116361
+    ],
+    [
+      0.193062,
+      0.127992,
+      0.140745
+    ],
+    [
+      0.204309,
+      0.138378,
+      0.133631
+    ],
+    [
+      0.262747,
+      0.137179,
+      0.139691
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      0.211828,
+      0.131883,
+      0.140642
+    ],
+    [
+      0.501351,
+      0.473549,
+      0.4646
+    ],
+    [
+      0.514702,
+      0.483177,
+      0.463666
+    ],
+    [
+      0.556396,
+      0.506087,
+      0.495446
+    ],
+    [
+      0.526772,
+      0.469837,
+      0.475565
+    ],
+    [
+      0.501989,
+      0.451439,
+      0.453961
+    ],
+    [
+      0.194303,
+      0.145404,
+      0.134303
+    ],
+    [
+      0.233585,
+      0.155217,
+      0.184013
+    ],
+    [
+      0.735295,
+      0.545071,
+      0.574414
+    ],
+    [
+      0.643663,
+      0.57551,
+      0.578995
+    ],
+    [
+      0.605364,
+      0.562849,
+      0.585697
+    ],
+    [
+      0.611609,
+      0.575481,
+      0.543498
+    ],
+    [
+      0.592935,
+      0.52912,
+      0.54634
+    ],
+    [
+      0.619275,
+      0.56571,
+      0.548793
+    ],
+    [
+      0.595305,
+      0.54541,
+      0.551676
+    ],
+    [
+      0.661588,
+      0.565408,
+      0.580852
+    ],
+    [
+      0.270282,
+      0.222756,
+      0.194359
+    ],
+    [
+      0.277654,
+      0.245923,
+      0.33374
+    ],
+    [
+      0.23531,
+      0.226843,
+      0.194642
+    ],
+    [
+      0.330276,
+      0.198679,
+      0.194434
+    ],
+    [
+      0.237554,
+      0.188966,
+      0.178232
+    ],
+    [
+      0.254526,
+      0.215014,
+      0.205796
+    ],
+    [
+      0.286422,
+      0.214456,
+      0.237668
+    ],
+    [
+      0.246412,
+      0.213519,
+      0.200946
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ]
+  ],
+  "cpu": [
+    [
+      0.033,
+      0.025,
+      0.025
+    ],
+    [
+      0.029,
+      0.023,
+      0.022
+    ],
+    [
+      0.068,
+      0.054,
+      0.052
+    ],
+    [
+      0.129,
+      0.106,
+      0.104
+    ],
+    [
+      0.11,
+      0.068,
+      0.065
+    ],
+    [
+      0.087,
+      0.074,
+      0.072
+    ],
+    [
+      0.075,
+      0.052,
+      0.05
+    ],
+    [
+      0.101,
+      0.061,
+      0.06
+    ],
+    [
+      0.572,
+      0.548,
+      0.547
+    ],
+    [
+      0.155,
+      0.135,
+      0.136
+    ],
+    [
+      0.345,
+      0.305,
+      0.301
+    ],
+    [
+      0.213,
+      0.133,
+      0.129
+    ],
+    [
+      0.274,
+      0.246,
+      0.246
+    ],
+    [
+      0.402,
+      0.359,
+      0.346
+    ],
+    [
+      0.293,
+      0.23,
+      0.224
+    ],
+    [
+      0.109,
+      0.095,
+      0.093
+    ],
+    [
+      0.091,
+      0.076,
+      0.075
+    ],
+    [
+      0.09,
+      0.076,
+      0.07
+    ],
+    [
+      0.15,
+      0.137,
+      0.132
+    ],
+    [
+      0.069,
+      0.06,
+      0.06
+    ],
+    [
+      0.087,
+      0.078,
+      0.077
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      0.069,
+      0.059,
+      0.059
+    ],
+    [
+      3.716,
+      3.656,
+      3.655
+    ],
+    [
+      3.603,
+      3.516,
+      3.551
+    ],
+    [
+      0.091,
+      0.076,
+      0.076
+    ],
+    [
+      0.155,
+      0.135,
+      0.134
+    ],
+    [
+      0.033,
+      0.026,
+      0.026
+    ],
+    [
+      0.09,
+      0.076,
+      0.076
+    ],
+    [
+      0.102,
+      0.063,
+      0.062
+    ],
+    [
+      0.522,
+      0.488,
+      0.481
+    ],
+    [
+      0.249,
+      0.219,
+      0.231
+    ],
+    [
+      0.212,
+      0.176,
+      0.168
+    ],
+    [
+      0.345,
+      0.298,
+      0.287
+    ],
+    [
+      0.507,
+      0.462,
+      0.441
+    ],
+    [
+      0.31,
+      0.238,
+      0.225
+    ],
+    [
+      0.403,
+      0.364,
+      0.354
+    ],
+    [
+      0.386,
+      0.343,
+      0.335
+    ],
+    [
+      0.294,
+      0.234,
+      0.23
+    ],
+    [
+      0.898,
+      0.874,
+      0.841
+    ],
+    [
+      0.48,
+      0.441,
+      0.45
+    ],
+    [
+      0.706,
+      0.64,
+      0.617
+    ],
+    [
+      0.431,
+      0.338,
+      0.331
+    ],
+    [
+      0.351,
+      0.315,
+      0.288
+    ],
+    [
+      0.648,
+      0.613,
+      0.607
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      0.313,
+      0.278,
+      0.28
+    ],
+    [
+      0.744,
+      0.686,
+      0.676
+    ],
+    [
+      0.34,
+      0.298,
+      0.293
+    ],
+    [
+      0.341,
+      0.299,
+      0.298
+    ],
+    [
+      0.152,
+      0.128,
+      0.126
+    ],
+    [
+      0.084,
+      0.068,
+      0.067
+    ],
+    [
+      0.109,
+      0.084,
+      0.085
+    ],
+    [
+      0.152,
+      0.13,
+      0.126
+    ],
+    [
+      0.154,
+      0.132,
+      0.124
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      0.151,
+      0.128,
+      0.127
+    ],
+    [
+      0.37,
+      0.347,
+      0.322
+    ],
+    [
+      0.459,
+      0.417,
+      0.421
+    ],
+    [
+      0.706,
+      0.66,
+      0.644
+    ],
+    [
+      0.511,
+      0.446,
+      0.436
+    ],
+    [
+      0.456,
+      0.424,
+      0.404
+    ],
+    [
+      0.154,
+      0.131,
+      0.131
+    ],
+    [
+      0.231,
+      0.203,
+      0.204
+    ],
+    [
+      0.413,
+      0.366,
+      0.373
+    ],
+    [
+      0.451,
+      0.377,
+      0.382
+    ],
+    [
+      0.41,
+      0.332,
+      0.322
+    ],
+    [
+      0.522,
+      0.426,
+      0.413
+    ],
+    [
+      0.444,
+      0.393,
+      0.373
+    ],
+    [
+      0.418,
+      0.33,
+      0.348
+    ],
+    [
+      0.468,
+      0.416,
+      0.37
+    ],
+    [
+      0.44,
+      0.4,
+      0.359
+    ],
+    [
+      0.076,
+      0.052,
+      0.051
+    ],
+    [
+      0.172,
+      0.141,
+      0.138
+    ],
+    [
+      0.063,
+      0.045,
+      0.049
+    ],
+    [
+      0.206,
+      0.165,
+      0.161
+    ],
+    [
+      0.065,
+      0.048,
+      0.046
+    ],
+    [
+      0.114,
+      0.103,
+      0.102
+    ],
+    [
+      0.118,
+      0.103,
+      0.099
+    ],
+    [
+      0.076,
+      0.049,
+      0.054
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ],
+    [
+      null,
+      null,
+      null
+    ]
+  ]
+}

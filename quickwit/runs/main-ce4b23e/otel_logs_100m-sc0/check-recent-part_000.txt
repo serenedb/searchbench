@@ -1,0 +1,8 @@
+68 ['failed', 'order'] checkout quickwit_main-ce4b23e-s3-sc0-r1_otel_logs_100m:OK@ms quickwit_main-ce4b23e-s3-sc0-r2_otel_logs_100m:OK@ms quickwit_main-ce4b23e-s3-sc0-r3_otel_logs_100m:OK@ms
+69 skip (not a plain term query)
+70 ['error']  quickwit_main-ce4b23e-s3-sc0-r1_otel_logs_100m:OK@ms quickwit_main-ce4b23e-s3-sc0-r2_otel_logs_100m:OK@ms quickwit_main-ce4b23e-s3-sc0-r3_otel_logs_100m:OK@ms
+71 skip (not a plain term query)
+72 ['charge'] payment quickwit_main-ce4b23e-s3-sc0-r1_otel_logs_100m:OK@ms quickwit_main-ce4b23e-s3-sc0-r2_otel_logs_100m:OK@ms quickwit_main-ce4b23e-s3-sc0-r3_otel_logs_100m:OK@ms
+73 [] cart quickwit_main-ce4b23e-s3-sc0-r1_otel_logs_100m:OK@ms quickwit_main-ce4b23e-s3-sc0-r2_otel_logs_100m:OK@ms quickwit_main-ce4b23e-s3-sc0-r3_otel_logs_100m:OK@ms
+74 skip (not a plain term query)
+75 skip (not a plain term query)

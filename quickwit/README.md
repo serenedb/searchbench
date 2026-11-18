@@ -22,9 +22,12 @@ split-pruning fix (#6865, #6966), none of which are in a 0.9.x release. Set
 |---|---|---|
 | **Quickwit (main-local)** | `results/quickwit_main-local_<dataset>.json` | Quickwit main `961c871`, 2026-11-15, AWS `m8g.4xlarge` (16 cores, 64 GiB), index on a 3,000 GiB gp3 volume (20k IOPS, 625 MiB/s). Median of 3 rounds. |
 | **Quickwit (main-s3)** | `results/quickwit_main-s3_<dataset>.json` | Same build, settings and machine type, with the index and metastore on S3. Median of 3 rounds. |
+| **Quickwit (main-ce4b23e-s3)** | `results/quickwit_main-ce4b23e-s3_<dataset>.json` | Quickwit main `ce4b23e`, 2026-11-18, 100M and 1B, with the published Datadog BYOC setup: AWS `m8gd.4xlarge`, index and metastore on S3, WAL on the instance-store NVMe. Storage cache off (`QW_STORAGE_CACHE=0/0`, see [Caches](#caches)). Median of 3 rounds. |
+| Quickwit (main-ce4b23e-s3-cache500m) | `results/quickwit_main-ce4b23e-s3-cache500m_otel_logs_100m.json` | Same box and 100M index with this build's default storage cache (500 MB, which holds split data too). 100M only. Median of 3 rounds. |
 | Quickwit | `results/quickwit_otel_logs_{100m,1b}.json` | Quickwit 0.9.0, 2026-09-20, GCP `n2-standard-32` with `pd-ssd`, with the adapter settings of that time. |
 
-[`runs/main-20261115/`](runs/main-20261115/README.md) has the method, the
+[`runs/main-20261115/`](runs/main-20261115/README.md) and
+[`runs/main-ce4b23e/`](runs/main-ce4b23e/README.md) have the method, the
 per-round evidence and the scripts of the main runs.
 
 The 0.9.0 `data_size` is not comparable with the main runs. It is `du` of the
@@ -145,6 +148,17 @@ reused.
 - **No split cache.** On S3, every try reads the splits from S3; only the split
   footers are cached between tries. On local disk, hot tries also benefit from
   the OS page cache, which the driver drops only before try 1.
+
+**Builds with #6962 (Quickwit main from 2026-11-17, e.g. `ce4b23e`).** The
+fast-field and footer caches are replaced by one `storage_cache` that holds
+footers, hotcaches, fast fields and every other split range. The table above
+then no longer applies: with only the legacy keys, the storage cache gets their
+sum (0 + the 500 MB footer default) and keeps split data, so at 100M hot tries
+made no storage reads at all. Footers can no longer be cached on their own.
+`QW_STORAGE_CACHE=<memory>/<disk>` writes `searcher.storage_cache`;
+`QW_STORAGE_CACHE=0/0` (the `main-ce4b23e-s3` column) disables it, so every
+try, footers included, reads from storage. Do not set it for older builds,
+which do not know the key.
 
 `request_timeout_secs` and `leaf_request_timeout_secs` are 300, so the
 driver's 60 s cap, not Quickwit's 30 s defaults, decides when a cold try is too
